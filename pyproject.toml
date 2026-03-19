@@ -1,6 +1,6 @@
 [project]
 name = "ai-trace-scan"
-version = "0.3.0"
+version = "0.4.0"
 description = "Detect AI/agentic authorship fingerprints in a codebase"
 requires-python = ">=3.10"
 readme = "README.md"
@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ai-trace-scan = "ai_trace_scan:main"
+ai-trace-scan = "ai_trace_scan.cli:main"
 
 [build-system]
 requires = ["hatchling"]
