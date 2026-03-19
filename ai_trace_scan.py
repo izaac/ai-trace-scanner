@@ -13,6 +13,10 @@ import sys
 from collections import namedtuple
 from pathlib import Path
 
+import pathspec
+from pygments import lexers
+from pygments.token import Token
+
 Finding = namedtuple("Finding", ["severity", "category", "location", "message"])
 
 # ---------------------------------------------------------------------------
@@ -74,19 +78,7 @@ COMMENT_PATTERNS = [
 ]
 
 TEXT_EXTENSIONS = {
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".vue", ".rb", ".go", ".rs",
-    ".java", ".kt", ".scala", ".c", ".cpp", ".h", ".hpp", ".cs",
-    ".sh", ".bash", ".zsh", ".fish", ".ps1",
-    ".yml", ".yaml", ".toml", ".json", ".xml",
     ".md", ".rst", ".txt", ".adoc",
-    ".tf", ".hcl", ".j2", ".jinja2", ".tpl",
-    ".sql", ".graphql", ".proto",
-    ".css", ".scss", ".less", ".html", ".svelte",
-    ".r", ".R", ".lua", ".php", ".pl", ".pm",
-    ".swift", ".m", ".mm",
-    ".dockerfile", ".containerfile",
-    ".cfg", ".ini", ".conf", ".env",
-    ".gradle", ".cmake", ".makefile",
 }
 
 TEXT_FILENAMES = {
@@ -210,41 +202,113 @@ def scan_config_files(root):
 
 
 def should_scan_file(path):
+    """Check if file is a plain-text format that pygments won't handle."""
     if path.name in TEXT_FILENAMES:
         return True
     return path.suffix.lower() in TEXT_EXTENSIONS
 
 
-def scan_file_comments(filepath, root):
-    findings = []
+def get_lexer(filepath):
+    """Try to get a pygments lexer for the file. Returns None if unsupported."""
     try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            for lineno, line in enumerate(f, 1):
-                for pattern, label in COMMENT_PATTERNS:
-                    if re.search(pattern, line, re.IGNORECASE):
-                        rel = filepath.relative_to(root)
-                        findings.append(Finding(
-                            severity="medium",
-                            category="source-comment",
-                            location=f"{rel}:{lineno}",
-                            message=label,
-                        ))
-    except (OSError, UnicodeDecodeError):
-        pass
+        return lexers.get_lexer_for_filename(filepath.name)
+    except lexers.ClassNotFound:
+        return None
+
+
+def extract_comments(filepath):
+    """Use pygments to extract only comment tokens with line numbers."""
+    try:
+        source = filepath.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return
+
+    lexer = get_lexer(filepath)
+    if not lexer:
+        return
+
+    lineno = 1
+    for ttype, value in lexer.get_tokens(source):
+        # Count newlines for line tracking
+        line_start = lineno
+        lineno += value.count("\n")
+
+        if ttype in Token.Comment or ttype in Token.Comment.Single \
+                or ttype in Token.Comment.Multiline or ttype in Token.Comment.Special \
+                or ttype is Token.Comment.Hashbang \
+                or str(ttype).startswith("Token.Comment"):
+            yield line_start, value
+
+
+def scan_file_comments(filepath, root):
+    """Scan a file for AI patterns — pygments for code, regex for plain text."""
+    findings = []
+    rel = filepath.relative_to(root)
+    lexer = get_lexer(filepath)
+
+    if lexer:
+        for lineno, comment_text in extract_comments(filepath):
+            for pattern, label in COMMENT_PATTERNS:
+                if re.search(pattern, comment_text, re.IGNORECASE):
+                    findings.append(Finding(
+                        severity="medium",
+                        category="source-comment",
+                        location=f"{rel}:{lineno}",
+                        message=label,
+                    ))
+    elif should_scan_file(filepath):
+        # Plain text / markdown — scan every line (no code vs comment distinction)
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                for lineno, line in enumerate(f, 1):
+                    for pattern, label in COMMENT_PATTERNS:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            findings.append(Finding(
+                                severity="medium",
+                                category="source-comment",
+                                location=f"{rel}:{lineno}",
+                                message=label,
+                            ))
+        except OSError:
+            pass
+
     return findings
+
+
+def load_gitignore(root):
+    """Load .gitignore patterns if present."""
+    gitignore_path = root / ".gitignore"
+    if not gitignore_path.is_file():
+        return None
+    try:
+        lines = gitignore_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+    except OSError:
+        return None
 
 
 def scan_source_tree(root):
     findings = []
     skip_self = root == SELF_DIR or SELF_DIR.is_relative_to(root)
+    ignore_spec = load_gitignore(root)
+
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for name in filenames:
             filepath = Path(dirpath) / name
             if skip_self and filepath.resolve().is_relative_to(SELF_DIR):
                 continue
-            if should_scan_file(filepath):
+
+            # Respect .gitignore
+            if ignore_spec:
+                rel_str = str(filepath.relative_to(root))
+                if ignore_spec.match_file(rel_str):
+                    continue
+
+            # Try pygments first, fall back to plain text scan
+            if get_lexer(filepath) or should_scan_file(filepath):
                 findings.extend(scan_file_comments(filepath, root))
+
     return findings
 
 
