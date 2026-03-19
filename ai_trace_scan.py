@@ -6,6 +6,7 @@ AI coding assistants (Copilot, Claude, Cursor, Aider, etc).
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -39,6 +40,14 @@ COMMIT_MSG_PATTERNS = [
      "AI tool attribution"),
 ]
 
+BOT_AUTHOR_PATTERNS = [
+    (r"copilot\[bot\]", "Copilot bot author"),
+    (r"github-actions\[bot\].*copilot", "GitHub Actions Copilot bot"),
+    (r"\+Copilot@users\.noreply\.github\.com", "Copilot noreply email"),
+    (r"devin\[bot\]", "Devin bot author"),
+    (r"sweep\[bot\]", "Sweep bot author"),
+]
+
 BRANCH_PATTERNS = [
     r"^copilot/",
     r"^claude/",
@@ -46,6 +55,8 @@ BRANCH_PATTERNS = [
     r"^cursor[-/]",
     r"^aider[-/]",
     r"^gemini[-/]",
+    r"^devin[-/]",
+    r"^sweep[-/]",
 ]
 
 AGENT_CONFIG_FILES = [
@@ -95,6 +106,43 @@ SKIP_DIRS = {
 
 SELF_DIR = Path(__file__).resolve().parent
 
+CONFIG_FILENAME = ".ai-trace-scan.yml"
+
+
+# ---------------------------------------------------------------------------
+# Config file
+# ---------------------------------------------------------------------------
+
+def load_config(root):
+    """Load .ai-trace-scan.yml from repo root if present."""
+    config_path = root / CONFIG_FILENAME
+    if not config_path.is_file():
+        return {}
+    try:
+        try:
+            import yaml
+            with open(config_path) as f:
+                return yaml.safe_load(f) or {}
+        except ImportError:
+            pass
+
+        # Fallback: parse simple key: [val, val] lines without PyYAML
+        config = {}
+        with open(config_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if ":" in line:
+                    key, _, val = line.partition(":")
+                    val = val.strip()
+                    if val.startswith("[") and val.endswith("]"):
+                        val = [v.strip().strip("'\"") for v in val[1:-1].split(",")]
+                    config[key.strip()] = val
+        return config
+    except OSError:
+        return {}
+
 
 # ---------------------------------------------------------------------------
 # Git helpers
@@ -126,12 +174,25 @@ def get_default_branch(cwd):
 
 
 # ---------------------------------------------------------------------------
+# Exclude filter
+# ---------------------------------------------------------------------------
+
+def make_exclude_filter(patterns):
+    """Return a function that checks if a string matches any exclude pattern."""
+    if not patterns:
+        return lambda _: False
+    compiled = [re.compile(p) for p in patterns]
+    return lambda s: any(r.search(s) for r in compiled)
+
+
+# ---------------------------------------------------------------------------
 # Scanners
 # ---------------------------------------------------------------------------
 
-def scan_commits(cwd, rev_range, max_commits):
+def scan_commits(cwd, rev_range, max_commits, exclude_fn):
     findings = []
-    fmt = "%H%n%s%n%b%n---END---"
+    # %aE = author email
+    fmt = "%H%n%aE%n%s%n%b%n---END---"
     out = git("log", f"--max-count={max_commits}", f"--format={fmt}", rev_range, cwd=cwd)
     if not out:
         return findings
@@ -141,12 +202,27 @@ def scan_commits(cwd, rev_range, max_commits):
         if not block:
             continue
         lines = block.split("\n")
+        if len(lines) < 3:
+            continue
         sha = lines[0][:12]
-        body = "\n".join(lines[1:])
+        author_email = lines[1]
+        subject = lines[2][:60]
+        body = "\n".join(lines[2:])
+
+        if exclude_fn(f"commit {sha}"):
+            continue
+
+        for pattern, label in BOT_AUTHOR_PATTERNS:
+            if re.search(pattern, author_email, re.IGNORECASE):
+                findings.append(Finding(
+                    severity="high",
+                    category="git-history",
+                    location=f"commit {sha} ({subject})",
+                    message=f"{label}: {author_email}",
+                ))
 
         for pattern, label in TRAILER_PATTERNS + COMMIT_MSG_PATTERNS:
             if re.search(pattern, body, re.IGNORECASE):
-                subject = lines[1][:60] if len(lines) > 1 else "(no subject)"
                 findings.append(Finding(
                     severity="high",
                     category="git-history",
@@ -156,7 +232,32 @@ def scan_commits(cwd, rev_range, max_commits):
     return findings
 
 
-def scan_branches(cwd):
+def scan_tags(cwd, exclude_fn):
+    """Scan annotated tag messages for AI traces."""
+    findings = []
+    out = git("tag", "-l", cwd=cwd)
+    if not out:
+        return findings
+
+    for tag in out.strip().split("\n"):
+        tag = tag.strip()
+        if not tag or exclude_fn(tag):
+            continue
+        msg = git("tag", "-l", "--format=%(contents)", tag, cwd=cwd)
+        if not msg:
+            continue
+        for pattern, label in TRAILER_PATTERNS + COMMIT_MSG_PATTERNS:
+            if re.search(pattern, msg, re.IGNORECASE):
+                findings.append(Finding(
+                    severity="high",
+                    category="git-tag",
+                    location=f"tag {tag}",
+                    message=label,
+                ))
+    return findings
+
+
+def scan_branches(cwd, exclude_fn):
     findings = []
     out = git("branch", "-a", "--format=%(refname:short)", cwd=cwd)
     if not out:
@@ -164,6 +265,8 @@ def scan_branches(cwd):
 
     for branch in out.strip().split("\n"):
         branch = branch.strip()
+        if exclude_fn(branch):
+            continue
         short = branch.split("/", 1)[-1] if "/" in branch else branch
         for pattern in BRANCH_PATTERNS:
             if re.search(pattern, short, re.IGNORECASE):
@@ -176,9 +279,11 @@ def scan_branches(cwd):
     return findings
 
 
-def scan_config_files(root):
+def scan_config_files(root, exclude_fn):
     findings = []
     for name in AGENT_CONFIG_FILES:
+        if exclude_fn(name):
+            continue
         path = root / name
         if path.exists():
             findings.append(Finding(
@@ -190,12 +295,12 @@ def scan_config_files(root):
 
     for pattern in AGENT_CONFIG_GLOBS:
         for match in root.glob(pattern):
-            rel = match.relative_to(root)
-            if str(rel) not in AGENT_CONFIG_FILES:
+            rel = str(match.relative_to(root))
+            if rel not in AGENT_CONFIG_FILES and not exclude_fn(rel):
                 findings.append(Finding(
                     severity="medium",
                     category="config-file",
-                    location=str(rel),
+                    location=rel,
                     message="AI assistant config file/directory present",
                 ))
     return findings
@@ -229,7 +334,6 @@ def extract_comments(filepath):
 
     lineno = 1
     for ttype, value in lexer.get_tokens(source):
-        # Count newlines for line tracking
         line_start = lineno
         lineno += value.count("\n")
 
@@ -257,7 +361,6 @@ def scan_file_comments(filepath, root):
                         message=label,
                     ))
     elif should_scan_file(filepath):
-        # Plain text / markdown — scan every line (no code vs comment distinction)
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 for lineno, line in enumerate(f, 1):
@@ -287,7 +390,7 @@ def load_gitignore(root):
         return None
 
 
-def scan_source_tree(root):
+def scan_source_tree(root, exclude_fn):
     findings = []
     skip_self = root == SELF_DIR or SELF_DIR.is_relative_to(root)
     ignore_spec = load_gitignore(root)
@@ -299,20 +402,19 @@ def scan_source_tree(root):
             if skip_self and filepath.resolve().is_relative_to(SELF_DIR):
                 continue
 
-            # Respect .gitignore
-            if ignore_spec:
-                rel_str = str(filepath.relative_to(root))
-                if ignore_spec.match_file(rel_str):
-                    continue
+            rel_str = str(filepath.relative_to(root))
+            if ignore_spec and ignore_spec.match_file(rel_str):
+                continue
+            if exclude_fn(rel_str):
+                continue
 
-            # Try pygments first, fall back to plain text scan
             if get_lexer(filepath) or should_scan_file(filepath):
                 findings.extend(scan_file_comments(filepath, root))
 
     return findings
 
 
-def scan_staged(cwd):
+def scan_staged(cwd, exclude_fn):
     findings = []
     out = git("diff", "--cached", "--unified=0", cwd=cwd)
     if not out:
@@ -323,6 +425,8 @@ def scan_staged(cwd):
         if line.startswith("+++ b/"):
             current_file = line[6:]
         elif line.startswith("+") and not line.startswith("+++"):
+            if current_file and exclude_fn(current_file):
+                continue
             added = line[1:]
             for pattern, label in TRAILER_PATTERNS + COMMENT_PATTERNS:
                 if re.search(pattern, added, re.IGNORECASE):
@@ -348,13 +452,14 @@ def supports_color():
     return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
 
-def print_findings(findings, use_color):
+def format_text(findings, use_color):
+    lines = []
     if not findings:
         mark = "\033[92m✓\033[0m" if use_color else "✓"
-        print(f"\n  {mark} No AI authorship traces found.\n")
-        return
+        lines.append(f"\n  {mark} No AI authorship traces found.\n")
+        return "\n".join(lines)
 
-    print(f"\n  Found {len(findings)} finding(s):\n")
+    lines.append(f"\n  Found {len(findings)} finding(s):\n")
 
     by_category = {}
     for f in findings:
@@ -363,20 +468,26 @@ def print_findings(findings, use_color):
     for cat, items in by_category.items():
         header = cat.replace("-", " ").title()
         if use_color:
-            print(f"  {BOLD}{header}{RESET}")
+            lines.append(f"  {BOLD}{header}{RESET}")
         else:
-            print(f"  {header}")
+            lines.append(f"  {header}")
 
         for item in items:
             sev = item.severity.upper()
             if use_color:
                 color = SEVERITY_COLORS.get(item.severity, "")
-                print(f"    {color}[{sev}]{RESET} {item.location}")
-                print(f"           {item.message}")
+                lines.append(f"    {color}[{sev}]{RESET} {item.location}")
+                lines.append(f"           {item.message}")
             else:
-                print(f"    [{sev}] {item.location}")
-                print(f"           {item.message}")
-        print()
+                lines.append(f"    [{sev}] {item.location}")
+                lines.append(f"           {item.message}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_json(findings):
+    return json.dumps([f._asdict() for f in findings], indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +507,11 @@ def main():
                         help="Scan commits in REF not in main/master")
     parser.add_argument("--commits", type=int, default=50, metavar="N",
                         help="Max commits to scan (default: 50)")
+    parser.add_argument("--exclude", action="append", default=[], metavar="PATTERN",
+                        help="Exclude findings matching regex (repeatable)")
+    parser.add_argument("--format", choices=["text", "json"], default="text",
+                        dest="output_format",
+                        help="Output format (default: text)")
     parser.add_argument("--no-color", action="store_true",
                         help="Disable colored output")
     parser.add_argument("--quiet", action="store_true",
@@ -403,13 +519,23 @@ def main():
     args = parser.parse_args()
 
     root = Path(args.path).resolve()
-    use_color = supports_color() and not args.no_color
+    use_color = supports_color() and not args.no_color and args.output_format == "text"
 
     if not root.is_dir():
         print(f"Error: {root} is not a directory", file=sys.stderr)
         sys.exit(2)
 
-    if not args.quiet:
+    # Merge excludes from config file and CLI
+    config = load_config(root)
+    excludes = list(args.exclude)
+    config_excludes = config.get("exclude", [])
+    if isinstance(config_excludes, list):
+        excludes.extend(config_excludes)
+    elif isinstance(config_excludes, str):
+        excludes.append(config_excludes)
+    exclude_fn = make_exclude_filter(excludes)
+
+    if not args.quiet and args.output_format == "text":
         name = root.name
         if use_color:
             print(f"\n  {BOLD}ai-trace-scan{RESET} — {name}")
@@ -423,24 +549,27 @@ def main():
         if not has_git:
             print("Error: --staged requires a git repository", file=sys.stderr)
             sys.exit(2)
-        findings.extend(scan_staged(root))
-        print_findings(findings, use_color)
-        sys.exit(1 if findings else 0)
+        findings.extend(scan_staged(root, exclude_fn))
+    else:
+        if has_git:
+            if args.branch:
+                default = get_default_branch(root)
+                rev_range = f"{default}..{args.branch}" if default else args.branch
+            else:
+                rev_range = "HEAD"
 
-    if has_git:
-        if args.branch:
-            default = get_default_branch(root)
-            rev_range = f"{default}..{args.branch}" if default else args.branch
-        else:
-            rev_range = "HEAD"
+            findings.extend(scan_commits(root, rev_range, args.commits, exclude_fn))
+            findings.extend(scan_branches(root, exclude_fn))
+            findings.extend(scan_tags(root, exclude_fn))
 
-        findings.extend(scan_commits(root, rev_range, args.commits))
-        findings.extend(scan_branches(root))
+        findings.extend(scan_config_files(root, exclude_fn))
+        findings.extend(scan_source_tree(root, exclude_fn))
 
-    findings.extend(scan_config_files(root))
-    findings.extend(scan_source_tree(root))
+    if args.output_format == "json":
+        print(format_json(findings))
+    else:
+        print(format_text(findings, use_color))
 
-    print_findings(findings, use_color)
     sys.exit(1 if findings else 0)
 
 
