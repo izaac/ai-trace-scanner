@@ -1,0 +1,14 @@
+[project]
+name = "ai-trace-scan"
+version = "0.1.0"
+description = "Detect AI/agentic authorship fingerprints in a codebase"
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "MIT" }
+
+[project.scripts]
+ai-trace-scan = "ai_trace_scan:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
