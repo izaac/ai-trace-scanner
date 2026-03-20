@@ -162,9 +162,54 @@ ai-scan --format json /path/to/repo | jq '[.[] | select(.severity == "high")]'
 
 ## Commit timing detection and fix
 
-The scanner detects suspiciously tight commit clustering (a common sign of
-automated/agentic commits). It also provides `--fix-dates` to rewrite
-timestamps to realistic human spacing.
+The scanner flags commits that are suspiciously close together. It can also
+rewrite timestamps to look like natural work sessions.
+
+### How it works
+
+**Single session** (default): Spreads commits evenly across a time window,
+then adds random jitter so the gaps are not identical.
+
+```
+first commit       +~1h±jitter       +~1h±jitter       +~1h±jitter
+    |                  |                  |                  |
+  14:22             15:08              16:34              17:15
+```
+
+The first commit keeps its original timestamp. The rest are spaced at
+`spread / (n-1)` intervals with `jitter` minutes of random variance.
+
+**Burst mode** (`--burst`): Splits commits into work sessions with idle
+days between them — simulates the pattern of working in bursts then
+taking days off.
+
+```
+Session 1 (day 1)        idle        Session 2 (day 4)
+  c1  c2  c3          ~3 days gap      c4  c5  c6
+  |   |   |                            |   |   |
+```
+
+### Usage
+
+```sh
+# Single session: spread 10 commits over 3 hours (default)
+ai-scan --fix-dates /path/to/repo
+
+# Longer session
+ai-scan --fix-dates --spread 6 /path/to/repo
+
+# Burst mode: 3 work sessions, ~2 days idle between each
+ai-scan --fix-dates --burst 3,2 /path/to/repo
+
+# Burst with custom session length
+ai-scan --fix-dates --burst 2,3 --spread 4 /path/to/repo
+
+# Tighter jitter for less variance
+ai-scan --fix-dates --jitter 5 /path/to/repo
+
+# Fix only a feature branch
+ai-scan --fix-dates --branch my-feature /path/to/repo
+```
 
 ### Detection
 
@@ -173,24 +218,6 @@ Commit timing analysis runs automatically during scans. Adjust sensitivity:
 ```sh
 # Flag clusters with less than 3-minute average gaps (stricter)
 ai-scan --cluster-threshold 3 /path/to/repo
-```
-
-### Fixing timestamps
-
-Spread commits over a realistic time range:
-
-```sh
-# Default: spread over 3 hours with 15-minute jitter
-ai-scan --fix-dates /path/to/repo
-
-# Spread over 6 hours (longer session)
-ai-scan --fix-dates --spread 6 /path/to/repo
-
-# Tight jitter for more uniform spacing
-ai-scan --fix-dates --spread 4 --jitter 5 /path/to/repo
-
-# Fix only a feature branch
-ai-scan --fix-dates --branch my-feature /path/to/repo
 ```
 
 WARNING: `--fix-dates` rewrites git history. Use before pushing.

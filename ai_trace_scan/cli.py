@@ -47,9 +47,11 @@ def main():
     date_group.add_argument("--fix-dates", action="store_true",
                             help="Rewrite commit timestamps to realistic spacing (destructive)")
     date_group.add_argument("--spread", type=float, default=3.0, metavar="HOURS",
-                            help="Time span to spread commits over (default: 3.0)")
+                            help="Time span per work session (default: 3.0)")
     date_group.add_argument("--jitter", type=float, default=15.0, metavar="MINUTES",
                             help="Random variance per commit (default: 15.0)")
+    date_group.add_argument("--burst", metavar="SESSIONS,GAP_DAYS",
+                            help="Split commits into work sessions with idle days between (e.g. 3,2)")
     date_group.add_argument("--cluster-threshold", type=float, default=5.0, metavar="MINUTES",
                             help="Flag commits closer than this average gap (default: 5.0)")
 
@@ -74,7 +76,16 @@ def main():
             rev_range = f"{default}..{args.branch}" if default else args.branch
         else:
             rev_range = "HEAD"
-        ok = fix_dates(root, rev_range, spread_hours=args.spread, jitter_minutes=args.jitter)
+        burst = None
+        if args.burst:
+            try:
+                parts = args.burst.split(",")
+                burst = (int(parts[0]), float(parts[1]))
+            except (ValueError, IndexError):
+                print("Error: --burst format is SESSIONS,GAP_DAYS (e.g. 3,2)", file=sys.stderr)
+                sys.exit(2)
+        ok = fix_dates(root, rev_range, spread_hours=args.spread,
+                       jitter_minutes=args.jitter, burst=burst)
         sys.exit(0 if ok else 2)
 
     # Normal scan mode
