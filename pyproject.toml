@@ -10,6 +10,9 @@ dependencies = [
     "pathspec>=0.12",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
 [project.scripts]
 ai-trace-scan = "ai_trace_scan.cli:main"
 

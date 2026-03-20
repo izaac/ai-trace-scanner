@@ -36,7 +36,11 @@ def _is_plain_text(path):
 
 def _get_lexer(filepath):
     try:
-        return lexers.get_lexer_for_filename(filepath.name)
+        lexer = lexers.get_lexer_for_filename(filepath.name)
+        # TextLexer doesn't parse comments — treat as plain text
+        if lexer.__class__.__name__ == "TextLexer":
+            return None
+        return lexer
     except lexers.ClassNotFound:
         return None
 
@@ -102,7 +106,7 @@ def _load_gitignore(root):
         return None
     try:
         lines = gitignore_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+        return pathspec.PathSpec.from_lines("gitignore", lines)
     except OSError:
         return None
 

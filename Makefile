@@ -1,4 +1,4 @@
-.PHONY: install run clean
+.PHONY: install run test clean
 
 UV := $(shell command -v uv 2>/dev/null)
 IS_NIXOS := $(shell test -e /etc/NIXOS && echo 1)
@@ -22,6 +22,9 @@ endif
 
 run:
 	uv run ai-trace-scan $(ARGS)
+
+test:
+	uv run --extra test pytest tests/ -v
 
 clean:
 	rm -rf .venv

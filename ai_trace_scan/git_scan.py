@@ -114,7 +114,11 @@ def scan_branches(cwd, exclude_fn):
         branch = branch.strip()
         if exclude_fn(branch):
             continue
-        short = branch.split("/", 1)[-1] if "/" in branch else branch
+        # Strip remote prefix (e.g. "origin/copilot/fix" -> "copilot/fix")
+        if branch.startswith("origin/") or branch.startswith("upstream/"):
+            short = branch.split("/", 1)[-1]
+        else:
+            short = branch
         for pattern in BRANCH_PATTERNS:
             if re.search(pattern, short, re.IGNORECASE):
                 findings.append(Finding(
