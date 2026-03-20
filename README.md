@@ -159,3 +159,38 @@ ai-scan --format json /path/to/repo
 # Pipe to jq for filtering
 ai-scan --format json /path/to/repo | jq '[.[] | select(.severity == "high")]'
 ```
+
+## Commit timing detection and fix
+
+The scanner detects suspiciously tight commit clustering (a common sign of
+automated/agentic commits). It also provides `--fix-dates` to rewrite
+timestamps to realistic human spacing.
+
+### Detection
+
+Commit timing analysis runs automatically during scans. Adjust sensitivity:
+
+```sh
+# Flag clusters with less than 3-minute average gaps (stricter)
+ai-scan --cluster-threshold 3 /path/to/repo
+```
+
+### Fixing timestamps
+
+Spread commits over a realistic time range:
+
+```sh
+# Default: spread over 3 hours with 15-minute jitter
+ai-scan --fix-dates /path/to/repo
+
+# Spread over 6 hours (longer session)
+ai-scan --fix-dates --spread 6 /path/to/repo
+
+# Tight jitter for more uniform spacing
+ai-scan --fix-dates --spread 4 --jitter 5 /path/to/repo
+
+# Fix only a feature branch
+ai-scan --fix-dates --branch my-feature /path/to/repo
+```
+
+WARNING: `--fix-dates` rewrites git history. Use before pushing.

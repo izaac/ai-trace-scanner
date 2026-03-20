@@ -15,7 +15,7 @@ def supports_color():
 def format_text(findings, use_color):
     lines = []
     if not findings:
-        mark = "\033[92m✓\033[0m" if use_color else "✓"
+        mark = "\033[92mOK\033[0m" if use_color else "OK"
         lines.append(f"\n  {mark} No AI authorship traces found.\n")
         return "\n".join(lines)
 

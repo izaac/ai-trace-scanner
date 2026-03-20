@@ -6,6 +6,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import load_config, make_exclude_filter
+from .dates import fix_dates, scan_dates
 from .git_scan import (
     get_default_branch,
     is_git_repo,
@@ -41,6 +42,17 @@ def main():
     parser.add_argument("--quiet", action="store_true",
                         help="Only print findings, no banner")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+
+    date_group = parser.add_argument_group("date normalization")
+    date_group.add_argument("--fix-dates", action="store_true",
+                            help="Rewrite commit timestamps to realistic spacing (destructive)")
+    date_group.add_argument("--spread", type=float, default=3.0, metavar="HOURS",
+                            help="Time span to spread commits over (default: 3.0)")
+    date_group.add_argument("--jitter", type=float, default=15.0, metavar="MINUTES",
+                            help="Random variance per commit (default: 15.0)")
+    date_group.add_argument("--cluster-threshold", type=float, default=5.0, metavar="MINUTES",
+                            help="Flag commits closer than this average gap (default: 5.0)")
+
     args = parser.parse_args()
 
     root = Path(args.path).resolve()
@@ -50,6 +62,22 @@ def main():
         print(f"Error: {root} is not a directory", file=sys.stderr)
         sys.exit(2)
 
+    has_git = is_git_repo(root)
+
+    # Fix dates mode — rewrite and exit
+    if args.fix_dates:
+        if not has_git:
+            print("Error: --fix-dates requires a git repository", file=sys.stderr)
+            sys.exit(2)
+        if args.branch:
+            default = get_default_branch(root)
+            rev_range = f"{default}..{args.branch}" if default else args.branch
+        else:
+            rev_range = "HEAD"
+        ok = fix_dates(root, rev_range, spread_hours=args.spread, jitter_minutes=args.jitter)
+        sys.exit(0 if ok else 2)
+
+    # Normal scan mode
     config = load_config(root)
     excludes = list(args.exclude)
     config_excludes = config.get("exclude", [])
@@ -67,7 +95,6 @@ def main():
             print(f"\n  ai-trace-scan — {name}")
 
     findings = []
-    has_git = is_git_repo(root)
 
     if args.staged:
         if not has_git:
@@ -83,6 +110,7 @@ def main():
                 rev_range = "HEAD"
 
             findings.extend(scan_commits(root, rev_range, args.commits, exclude_fn))
+            findings.extend(scan_dates(root, rev_range, args.commits, args.cluster_threshold))
             findings.extend(scan_branches(root, exclude_fn))
             findings.extend(scan_tags(root, exclude_fn))
 

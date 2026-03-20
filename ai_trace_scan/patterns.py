@@ -14,6 +14,7 @@ COMMIT_MSG_PATTERNS = [
      "AI generation attribution"),
     (r"\b(?:copilot|claude|cursor|aider)\s+(?:suggested|generated|wrote|created)\b",
      "AI tool attribution"),
+    (r"^[\U0001f300-\U0001faff\u2600-\u27bf\u2b50]", "Emoji prefix in commit subject (common AI convention)"),
 ]
 
 BOT_AUTHOR_PATTERNS = [
