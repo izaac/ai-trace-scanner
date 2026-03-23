@@ -3,7 +3,7 @@
 import os
 import subprocess
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ai_trace_scan.dates import (
     _detect_clustering,
@@ -111,7 +111,7 @@ class TestFixDates:
         total_span = (dates[-1] - dates[0]).total_seconds() / 3600
         assert total_span >= 2.5  # ~3 hours with some tolerance
 
-    def test_preserves_first_commit_date(self, clustered_repo):
+    def test_preserves_first_commit_date_with_first_commit_anchor(self, clustered_repo):
         # Get original first commit date
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI", "--reverse"],
@@ -119,7 +119,8 @@ class TestFixDates:
         ).stdout
         original_first = out.strip().split("\n")[0]
 
-        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0)
+        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0,
+                  anchor="first-commit")
 
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI", "--reverse"],
@@ -127,6 +128,19 @@ class TestFixDates:
         ).stdout
         new_first = out.strip().split("\n")[0]
         assert new_first == original_first
+
+    def test_present_anchor_no_future_dates(self, clustered_repo):
+        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0,
+                  anchor="present")
+
+        out = subprocess.run(
+            ["git", "--no-pager", "log", "--format=%aI"],
+            cwd=clustered_repo, capture_output=True, text=True,
+        ).stdout
+        now = datetime.now(tz=timezone.utc)
+        for line in out.strip().split("\n"):
+            dt = datetime.fromisoformat(line)
+            assert dt <= now + timedelta(minutes=1)  # small tolerance
 
     def test_burst_mode(self, tmp_path):
         repo = _make_clustered_repo(tmp_path, count=6, gap_seconds=60)
