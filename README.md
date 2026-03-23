@@ -192,6 +192,9 @@ Session 1 (day 1)        idle        Session 2 (day 4)
 ### Usage
 
 ```sh
+# Preview what would change (safe, no modifications)
+ai-scan --fix-dates --dry-run /path/to/repo
+
 # Single session: spread 10 commits over 3 hours (default)
 ai-scan --fix-dates /path/to/repo
 
@@ -209,6 +212,43 @@ ai-scan --fix-dates --jitter 5 /path/to/repo
 
 # Fix only a feature branch
 ai-scan --fix-dates --branch my-feature /path/to/repo
+
+# Override remote-push safety check (you know what you're doing)
+ai-scan --fix-dates --force /path/to/repo
+```
+
+### Safety checks
+
+`--fix-dates` rewrites git history, so it runs several checks before
+touching anything:
+
+| Check | What happens | Override |
+|---|---|---|
+| Dirty working tree | Refuses to run if you have uncommitted or staged changes | Commit or stash first |
+| Git operation in progress | Refuses if a rebase, merge, or cherry-pick is active | Finish or abort it |
+| Pushed commits | Refuses if any commits exist on remote tracking branches | `--force` |
+| Backup branch | Creates `backup/fix-dates-YYYYMMDD-HHMMSS` before rewriting | Automatic |
+| Post-rewrite verification | Compares tree SHAs before/after to confirm file content is unchanged | None — prints restore command on failure |
+
+After every rewrite, undo instructions are printed:
+
+```
+  To undo: git reset --hard backup/fix-dates-20260329-163500
+  To clean up backup: git branch -D backup/fix-dates-20260329-163500
+```
+
+Use `--dry-run` to preview the timestamp changes without modifying history:
+
+```sh
+ai-scan --fix-dates --dry-run /path/to/repo
+```
+
+```
+  [DRY RUN] Would rewrite 5 commits:
+
+    a1b2c3d4e5f6  2026-03-29T10:00:00-07:00  ->  2026-03-29T10:00:00-07:00
+    f6e5d4c3b2a1  2026-03-29T10:01:00-07:00  ->  2026-03-29T10:48:12-07:00
+    ...
 ```
 
 ### Detection
@@ -219,5 +259,3 @@ Commit timing analysis runs automatically during scans. Adjust sensitivity:
 # Flag clusters with less than 3-minute average gaps (stricter)
 ai-scan --cluster-threshold 3 /path/to/repo
 ```
-
-WARNING: `--fix-dates` rewrites git history. Use before pushing.
