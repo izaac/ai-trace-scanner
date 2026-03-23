@@ -1,10 +1,9 @@
 """Tests for output formatting."""
 
 import json
-import pytest
 
 from ai_trace_scan import Finding
-from ai_trace_scan.output import format_text, format_json
+from ai_trace_scan.output import format_json, format_text
 
 
 class TestFormatText:

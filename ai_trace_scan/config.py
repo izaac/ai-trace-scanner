@@ -14,6 +14,7 @@ def load_config(root):
     try:
         try:
             import yaml
+
             with open(config_path) as f:
                 return yaml.safe_load(f) or {}
         except ImportError:

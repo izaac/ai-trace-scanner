@@ -1,8 +1,5 @@
 """Tests for config loading and exclude filter."""
 
-import pytest
-from pathlib import Path
-
 from ai_trace_scan.config import load_config, make_exclude_filter
 
 

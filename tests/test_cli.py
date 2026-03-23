@@ -1,24 +1,29 @@
 """Tests for CLI entry point."""
 
-import subprocess
 import os
-import pytest
+import subprocess
 
 
 def _run_cli(*args, cwd=None):
     """Run ai-trace-scan as a subprocess."""
     result = subprocess.run(
-        ["uv", "run", "ai-trace-scan"] + list(args),
-        capture_output=True, text=True,
+        ["uv", "run", "ai-trace-scan", *list(args)],
+        capture_output=True,
+        text=True,
         cwd=cwd or os.path.dirname(os.path.dirname(__file__)),
     )
     return result
 
 
 def _git_run(*args, cwd):
-    env = {**os.environ, "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@test.com",
-           "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@test.com"}
-    subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, check=True, env=env)
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@test.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@test.com",
+    }
+    subprocess.run(["git", *list(args)], cwd=cwd, capture_output=True, check=True, env=env)
 
 
 class TestCliBasic:

@@ -8,8 +8,11 @@ from datetime import datetime, timedelta, timezone
 
 def _git(*args, cwd=None):
     r = subprocess.run(
-        ["git", "--no-pager"] + list(args),
-        capture_output=True, text=True, cwd=cwd, timeout=30,
+        ["git", "--no-pager", *list(args)],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        timeout=30,
     )
     return r.stdout if r.returncode == 0 else None
 
@@ -17,6 +20,7 @@ def _git(*args, cwd=None):
 # ---------------------------------------------------------------------------
 # Safety checks
 # ---------------------------------------------------------------------------
+
 
 def _check_clean_worktree(cwd):
     """Ensure no uncommitted changes exist."""
@@ -31,6 +35,7 @@ def _check_clean_worktree(cwd):
 def _check_no_operation_in_progress(cwd):
     """Ensure no rebase, merge, or cherry-pick is in progress."""
     from pathlib import Path
+
     git_dir = Path(cwd) / ".git"
     for marker in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD"):
         if (git_dir / marker).exists():
@@ -99,7 +104,7 @@ def _verify_trees_preserved(cwd, original_trees, new_shas):
 
     old_trees = list(original_trees.values())
 
-    if sorted(new_trees[:len(old_trees)]) != sorted(old_trees):
+    if sorted(new_trees[: len(old_trees)]) != sorted(old_trees):
         return (
             "WARNING: Tree SHAs changed after rewrite — file content may have been altered!\n"
             "  Restore from backup branch immediately."
@@ -172,28 +177,40 @@ def scan_dates(cwd, rev_range, max_commits, threshold_minutes=5):
         return findings
 
     total_minutes = (dates[-1] - dates[0]).total_seconds() / 60
-    findings.append(Finding(
-        severity="medium",
-        category="commit-timing",
-        location=f"{len(entries)} commits in {total_minutes:.0f} minutes",
-        message=f"Commits are clustered within {threshold_minutes}min avg gap (possible automation)",
-    ))
+    findings.append(
+        Finding(
+            severity="medium",
+            category="commit-timing",
+            location=f"{len(entries)} commits in {total_minutes:.0f} minutes",
+            message=f"Commits are clustered within {threshold_minutes}min avg gap (possible automation)",
+        )
+    )
 
     for i in range(1, len(entries)):
         gap = (dates[i] - dates[i - 1]).total_seconds()
         if gap < threshold_minutes * 60:
-            findings.append(Finding(
-                severity="low",
-                category="commit-timing",
-                location=f"commit {entries[i][0]}",
-                message=f"{gap:.0f}s after previous commit",
-            ))
+            findings.append(
+                Finding(
+                    severity="low",
+                    category="commit-timing",
+                    location=f"commit {entries[i][0]}",
+                    message=f"{gap:.0f}s after previous commit",
+                )
+            )
 
     return findings
 
 
-def fix_dates(cwd, rev_range, spread_hours=3.0, jitter_minutes=15.0, burst=None,
-              dry_run=False, force=False, anchor="present"):
+def fix_dates(
+    cwd,
+    rev_range,
+    spread_hours=3.0,
+    jitter_minutes=15.0,
+    burst=None,
+    dry_run=False,
+    force=False,
+    anchor="present",
+):
     """Rewrite commit timestamps to spread over a realistic time range.
 
     Args:
@@ -246,7 +263,7 @@ def fix_dates(cwd, rev_range, spread_hours=3.0, jitter_minutes=15.0, burst=None,
         per_session = max(1, count // sessions)
         chunks = []
         for i in range(0, count, per_session):
-            chunks.append(entries[i:i + per_session])
+            chunks.append(entries[i : i + per_session])
         # Merge trailing remainder into last chunk
         if len(chunks) > sessions:
             chunks[-2].extend(chunks[-1])
@@ -294,8 +311,7 @@ def fix_dates(cwd, rev_range, spread_hours=3.0, jitter_minutes=15.0, burst=None,
         latest = max(datetime.fromisoformat(d) for d in new_dates.values())
         shift = now - latest
         new_dates = {
-            sha: (datetime.fromisoformat(d) + shift).isoformat()
-            for sha, d in new_dates.items()
+            sha: (datetime.fromisoformat(d) + shift).isoformat() for sha, d in new_dates.items()
         }
 
     if dry_run:
@@ -336,7 +352,10 @@ def _rewrite_dates(cwd, new_dates, count, spread_hours, burst, rev_range):
 
     result = subprocess.run(
         ["git", "filter-branch", "-f", "--env-filter", env_filter, "--", "--all"],
-        capture_output=True, text=True, cwd=cwd, timeout=120,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        timeout=120,
     )
 
     if result.returncode != 0:
@@ -357,7 +376,8 @@ def _rewrite_dates(cwd, new_dates, count, spread_hours, burst, rev_range):
     # 5. Clean up refs/original (filter-branch backup — we have our own backup branch)
     subprocess.run(
         ["rm", "-rf", f"{cwd}/.git/refs/original"],
-        capture_output=True, cwd=cwd,
+        capture_output=True,
+        cwd=cwd,
     )
 
     # 6. Show results
@@ -365,7 +385,9 @@ def _rewrite_dates(cwd, new_dates, count, spread_hours, burst, rev_range):
     if out:
         if burst:
             sessions, gap = burst
-            print(f"\n  Rewrote {count} commits across {sessions} sessions (~{spread_hours}h each, ~{gap}d gaps):\n")
+            print(
+                f"\n  Rewrote {count} commits across {sessions} sessions (~{spread_hours}h each, ~{gap}d gaps):\n"
+            )
         else:
             print(f"\n  Rewrote {count} commits over ~{spread_hours}h:\n")
         for line in out.strip().split("\n"):

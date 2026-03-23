@@ -2,25 +2,33 @@
 
 import os
 import subprocess
+
 import pytest
 
 from ai_trace_scan.git_scan import (
+    get_default_branch,
     git,
     is_git_repo,
-    get_default_branch,
-    scan_commits,
     scan_branches,
-    scan_tags,
+    scan_commits,
     scan_staged,
+    scan_tags,
 )
 
 
 def _git_run(*args, cwd):
     subprocess.run(
-        ["git"] + list(args),
-        cwd=cwd, capture_output=True, check=True,
-        env={**os.environ, "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@test.com",
-             "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        ["git", *list(args)],
+        cwd=cwd,
+        capture_output=True,
+        check=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+        },
     )
 
 
@@ -64,9 +72,9 @@ class TestScanCommits:
     def test_detects_copilot_trailer(self, git_repo):
         (git_repo / "f2.txt").write_text("data")
         _git_run("add", ".", cwd=git_repo)
-        _git_run("commit", "-m",
-                 "Fix bug\n\nCo-authored-by: Copilot <copilot@github.com>",
-                 cwd=git_repo)
+        _git_run(
+            "commit", "-m", "Fix bug\n\nCo-authored-by: Copilot <copilot@github.com>", cwd=git_repo
+        )
         findings = scan_commits(git_repo, "HEAD", 10, lambda _: False)
         assert any("Copilot trailer" in f.message for f in findings)
 
@@ -82,12 +90,15 @@ class TestScanCommits:
         _git_run("add", ".", cwd=git_repo)
         subprocess.run(
             ["git", "commit", "-m", "Bot commit"],
-            cwd=git_repo, capture_output=True,
-            env={**os.environ,
-                 "GIT_AUTHOR_NAME": "copilot[bot]",
-                 "GIT_AUTHOR_EMAIL": "copilot[bot]@users.noreply.github.com",
-                 "GIT_COMMITTER_NAME": "copilot[bot]",
-                 "GIT_COMMITTER_EMAIL": "copilot[bot]@users.noreply.github.com"},
+            cwd=git_repo,
+            capture_output=True,
+            env={
+                **os.environ,
+                "GIT_AUTHOR_NAME": "copilot[bot]",
+                "GIT_AUTHOR_EMAIL": "copilot[bot]@users.noreply.github.com",
+                "GIT_COMMITTER_NAME": "copilot[bot]",
+                "GIT_COMMITTER_EMAIL": "copilot[bot]@users.noreply.github.com",
+            },
         )
         findings = scan_commits(git_repo, "HEAD", 10, lambda _: False)
         assert any("bot author" in f.message.lower() for f in findings)
@@ -99,9 +110,9 @@ class TestScanCommits:
     def test_respects_exclude(self, git_repo):
         (git_repo / "f2.txt").write_text("data")
         _git_run("add", ".", cwd=git_repo)
-        _git_run("commit", "-m",
-                 "Fix\n\nCo-authored-by: Copilot <copilot@github.com>",
-                 cwd=git_repo)
+        _git_run(
+            "commit", "-m", "Fix\n\nCo-authored-by: Copilot <copilot@github.com>", cwd=git_repo
+        )
         # Exclude all commits
         findings = scan_commits(git_repo, "HEAD", 10, lambda _: True)
         assert len(findings) == 0
@@ -125,16 +136,24 @@ class TestScanBranches:
 
     def test_respects_exclude(self, git_repo):
         _git_run("branch", "copilot/fix-bug", cwd=git_repo)
-        exclude_fn = lambda s: "copilot" in s
+
+        def exclude_fn(s):
+            return "copilot" in s
+
         findings = scan_branches(git_repo, exclude_fn)
         assert len(findings) == 0
 
 
 class TestScanTags:
     def test_detects_trailer_in_tag(self, git_repo):
-        _git_run("tag", "-a", "v1.0", "-m",
-                 "Release\n\nCo-authored-by: Copilot <c@github.com>",
-                 cwd=git_repo)
+        _git_run(
+            "tag",
+            "-a",
+            "v1.0",
+            "-m",
+            "Release\n\nCo-authored-by: Copilot <c@github.com>",
+            cwd=git_repo,
+        )
         findings = scan_tags(git_repo, lambda _: False)
         assert any("tag v1.0" in f.location for f in findings)
 
@@ -144,9 +163,14 @@ class TestScanTags:
         assert len(findings) == 0
 
     def test_respects_exclude(self, git_repo):
-        _git_run("tag", "-a", "v1.0", "-m",
-                 "Release\n\nCo-authored-by: Copilot <c@github.com>",
-                 cwd=git_repo)
+        _git_run(
+            "tag",
+            "-a",
+            "v1.0",
+            "-m",
+            "Release\n\nCo-authored-by: Copilot <c@github.com>",
+            cwd=git_repo,
+        )
         findings = scan_tags(git_repo, lambda s: "v1.0" in s)
         assert len(findings) == 0
 

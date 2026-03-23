@@ -1,4 +1,4 @@
-.PHONY: install run test clean
+.PHONY: install run test lint format clean
 
 UV := $(shell command -v uv 2>/dev/null)
 IS_NIXOS := $(shell test -e /etc/NIXOS && echo 1)
@@ -18,13 +18,23 @@ else
 	@exit 1
 endif
 endif
-	uv sync
+	uv sync --extra dev --extra test
 
 run:
 	uv run ai-trace-scan $(ARGS)
 
 test:
 	uv run --extra test pytest tests/ -v
+
+lint:
+	uv run --extra dev ruff check ai_trace_scan/ tests/
+	uv run --extra dev black --check ai_trace_scan/ tests/
+	uv run --extra dev mdformat --check *.md
+
+format:
+	uv run --extra dev ruff check --fix ai_trace_scan/ tests/
+	uv run --extra dev black ai_trace_scan/ tests/
+	uv run --extra dev mdformat *.md
 
 clean:
 	rm -rf .venv

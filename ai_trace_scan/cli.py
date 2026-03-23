@@ -24,43 +24,80 @@ def main():
         prog="ai-trace-scan",
         description="Detect AI/agentic authorship fingerprints in a codebase.",
     )
-    parser.add_argument("path", nargs="?", default=".",
-                        help="Repository path to scan (default: current directory)")
-    parser.add_argument("--staged", action="store_true",
-                        help="Scan only staged changes (pre-commit hook mode)")
-    parser.add_argument("--branch", metavar="REF",
-                        help="Scan commits in REF not in main/master")
-    parser.add_argument("--commits", type=int, default=50, metavar="N",
-                        help="Max commits to scan (default: 50)")
-    parser.add_argument("--exclude", action="append", default=[], metavar="PATTERN",
-                        help="Exclude findings matching regex (repeatable)")
-    parser.add_argument("--format", choices=["text", "json"], default="text",
-                        dest="output_format",
-                        help="Output format (default: text)")
-    parser.add_argument("--no-color", action="store_true",
-                        help="Disable colored output")
-    parser.add_argument("--quiet", action="store_true",
-                        help="Only print findings, no banner")
+    parser.add_argument(
+        "path", nargs="?", default=".", help="Repository path to scan (default: current directory)"
+    )
+    parser.add_argument(
+        "--staged", action="store_true", help="Scan only staged changes (pre-commit hook mode)"
+    )
+    parser.add_argument("--branch", metavar="REF", help="Scan commits in REF not in main/master")
+    parser.add_argument(
+        "--commits", type=int, default=50, metavar="N", help="Max commits to scan (default: 50)"
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Exclude findings matching regex (repeatable)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        dest="output_format",
+        help="Output format (default: text)",
+    )
+    parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    parser.add_argument("--quiet", action="store_true", help="Only print findings, no banner")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     date_group = parser.add_argument_group("date normalization")
-    date_group.add_argument("--fix-dates", action="store_true",
-                            help="Rewrite commit timestamps to realistic spacing (destructive)")
-    date_group.add_argument("--dry-run", action="store_true",
-                            help="Show what --fix-dates would do without modifying history")
-    date_group.add_argument("--force", action="store_true",
-                            help="Skip safety checks (pushed commits, confirmation)")
-    date_group.add_argument("--anchor", choices=["present", "first-commit"],
-                            default="present",
-                            help="Anchor last commit to now (default) or keep first commit's date")
-    date_group.add_argument("--spread", type=float, default=3.0, metavar="HOURS",
-                            help="Time span per work session (default: 3.0)")
-    date_group.add_argument("--jitter", type=float, default=15.0, metavar="MINUTES",
-                            help="Random variance per commit (default: 15.0)")
-    date_group.add_argument("--burst", metavar="SESSIONS,GAP_DAYS",
-                            help="Split commits into work sessions with idle days between (e.g. 3,2)")
-    date_group.add_argument("--cluster-threshold", type=float, default=5.0, metavar="MINUTES",
-                            help="Flag commits closer than this average gap (default: 5.0)")
+    date_group.add_argument(
+        "--fix-dates",
+        action="store_true",
+        help="Rewrite commit timestamps to realistic spacing (destructive)",
+    )
+    date_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what --fix-dates would do without modifying history",
+    )
+    date_group.add_argument(
+        "--force", action="store_true", help="Skip safety checks (pushed commits, confirmation)"
+    )
+    date_group.add_argument(
+        "--anchor",
+        choices=["present", "first-commit"],
+        default="present",
+        help="Anchor last commit to now (default) or keep first commit's date",
+    )
+    date_group.add_argument(
+        "--spread",
+        type=float,
+        default=3.0,
+        metavar="HOURS",
+        help="Time span per work session (default: 3.0)",
+    )
+    date_group.add_argument(
+        "--jitter",
+        type=float,
+        default=15.0,
+        metavar="MINUTES",
+        help="Random variance per commit (default: 15.0)",
+    )
+    date_group.add_argument(
+        "--burst",
+        metavar="SESSIONS,GAP_DAYS",
+        help="Split commits into work sessions with idle days between (e.g. 3,2)",
+    )
+    date_group.add_argument(
+        "--cluster-threshold",
+        type=float,
+        default=5.0,
+        metavar="MINUTES",
+        help="Flag commits closer than this average gap (default: 5.0)",
+    )
 
     args = parser.parse_args()
 
@@ -91,10 +128,16 @@ def main():
             except (ValueError, IndexError):
                 print("Error: --burst format is SESSIONS,GAP_DAYS (e.g. 3,2)", file=sys.stderr)
                 sys.exit(2)
-        ok = fix_dates(root, rev_range, spread_hours=args.spread,
-                       jitter_minutes=args.jitter, burst=burst,
-                       dry_run=args.dry_run, force=args.force,
-                       anchor=args.anchor)
+        ok = fix_dates(
+            root,
+            rev_range,
+            spread_hours=args.spread,
+            jitter_minutes=args.jitter,
+            burst=burst,
+            dry_run=args.dry_run,
+            force=args.force,
+            anchor=args.anchor,
+        )
         sys.exit(0 if ok else 2)
 
     # Normal scan mode

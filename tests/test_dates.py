@@ -2,29 +2,34 @@
 
 import os
 import subprocess
-import pytest
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from ai_trace_scan.dates import (
-    _detect_clustering,
     _check_clean_worktree,
     _check_no_operation_in_progress,
     _check_not_pushed,
-    _create_backup_branch,
     _collect_tree_shas,
-    _verify_trees_preserved,
+    _create_backup_branch,
+    _detect_clustering,
+    fix_dates,
     preflight_checks,
     scan_dates,
-    fix_dates,
 )
 
 
 def _git_run(*args, cwd, env_extra=None):
-    env = {**os.environ, "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@test.com",
-           "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@test.com"}
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@test.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@test.com",
+    }
     if env_extra:
         env.update(env_extra)
-    subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, check=True, env=env)
+    subprocess.run(["git", *list(args)], cwd=cwd, capture_output=True, check=True, env=env)
 
 
 def _make_clustered_repo(tmp_path, count=5, gap_seconds=60):
@@ -39,9 +44,13 @@ def _make_clustered_repo(tmp_path, count=5, gap_seconds=60):
         datestr = dt.strftime("%Y-%m-%dT%H:%M:%S-07:00")
         (tmp_path / f"file{i}.txt").write_text(str(i))
         _git_run("add", ".", cwd=tmp_path)
-        _git_run("commit", "-m", f"commit {i}",
-                 cwd=tmp_path,
-                 env_extra={"GIT_AUTHOR_DATE": datestr, "GIT_COMMITTER_DATE": datestr})
+        _git_run(
+            "commit",
+            "-m",
+            f"commit {i}",
+            cwd=tmp_path,
+            env_extra={"GIT_AUTHOR_DATE": datestr, "GIT_COMMITTER_DATE": datestr},
+        )
     return tmp_path
 
 
@@ -104,7 +113,9 @@ class TestFixDates:
 
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI"],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout
         dates = [datetime.fromisoformat(d) for d in out.strip().split("\n")]
         dates.reverse()
@@ -115,27 +126,31 @@ class TestFixDates:
         # Get original first commit date
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI", "--reverse"],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout
         original_first = out.strip().split("\n")[0]
 
-        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0,
-                  anchor="first-commit")
+        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0, anchor="first-commit")
 
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI", "--reverse"],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout
         new_first = out.strip().split("\n")[0]
         assert new_first == original_first
 
     def test_present_anchor_no_future_dates(self, clustered_repo):
-        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0,
-                  anchor="present")
+        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0, anchor="present")
 
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI"],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout
         now = datetime.now(tz=timezone.utc)
         for line in out.strip().split("\n"):
@@ -144,13 +159,14 @@ class TestFixDates:
 
     def test_burst_mode(self, tmp_path):
         repo = _make_clustered_repo(tmp_path, count=6, gap_seconds=60)
-        result = fix_dates(repo, "HEAD", spread_hours=2.0, jitter_minutes=0,
-                           burst=(2, 3))
+        result = fix_dates(repo, "HEAD", spread_hours=2.0, jitter_minutes=0, burst=(2, 3))
         assert result is True
 
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI", "--reverse"],
-            cwd=repo, capture_output=True, text=True,
+            cwd=repo,
+            capture_output=True,
+            text=True,
         ).stdout
         dates = [datetime.fromisoformat(d) for d in out.strip().split("\n")]
 
@@ -173,18 +189,21 @@ class TestFixDates:
         # Get original SHAs
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%H"],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         original_shas = out.split("\n")
 
-        result = fix_dates(clustered_repo, "HEAD", spread_hours=3.0,
-                           jitter_minutes=0, dry_run=True)
+        result = fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0, dry_run=True)
         assert result is True
 
         # SHAs must be unchanged
         out = subprocess.run(
             ["git", "--no-pager", "log", "--format=%H"],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         assert out.split("\n") == original_shas
 
@@ -232,10 +251,16 @@ class TestSafetyChecks:
         assert "cherry" in err.lower()
 
     def test_no_remotes_passes(self, clustered_repo):
-        shas = subprocess.run(
-            ["git", "rev-list", "HEAD"],
-            cwd=clustered_repo, capture_output=True, text=True,
-        ).stdout.strip().split("\n")
+        shas = (
+            subprocess.run(
+                ["git", "rev-list", "HEAD"],
+                cwd=clustered_repo,
+                capture_output=True,
+                text=True,
+            )
+            .stdout.strip()
+            .split("\n")
+        )
         err = _check_not_pushed(clustered_repo, shas)
         assert err is None  # no remotes = safe
 
@@ -247,7 +272,9 @@ class TestSafetyChecks:
         # Branch actually exists
         out = subprocess.run(
             ["git", "branch", "--list", name],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         assert name in out
 
@@ -255,7 +282,7 @@ class TestSafetyChecks:
         trees = _collect_tree_shas(clustered_repo, "HEAD")
         assert len(trees) > 0
         # All values should be 40-char hex
-        for sha, tree in trees.items():
+        for _sha, tree in trees.items():
             assert len(tree) == 40
 
     def test_fix_dates_blocked_by_dirty_worktree(self, clustered_repo):
@@ -273,16 +300,24 @@ class TestSafetyChecks:
 
         out = subprocess.run(
             ["git", "branch", "--list", "backup/*"],
-            cwd=clustered_repo, capture_output=True, text=True,
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         assert "backup/fix-dates-" in out
 
     def test_preflight_all_clear(self, clustered_repo):
-        shas = subprocess.run(
-            ["git", "rev-list", "HEAD"],
-            cwd=clustered_repo, capture_output=True, text=True,
-        ).stdout.strip().split("\n")
-        ok, msgs = preflight_checks(clustered_repo, shas)
+        shas = (
+            subprocess.run(
+                ["git", "rev-list", "HEAD"],
+                cwd=clustered_repo,
+                capture_output=True,
+                text=True,
+            )
+            .stdout.strip()
+            .split("\n")
+        )
+        ok, _msgs = preflight_checks(clustered_repo, shas)
         assert ok is True
 
     def test_preflight_blocks_dirty(self, clustered_repo):

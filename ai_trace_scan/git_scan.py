@@ -16,8 +16,11 @@ from .patterns import (
 def git(*args, cwd=None):
     try:
         r = subprocess.run(
-            ["git", "--no-pager"] + list(args),
-            capture_output=True, text=True, cwd=cwd, timeout=30,
+            ["git", "--no-pager", *list(args)],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=30,
         )
         return r.stdout if r.returncode == 0 else None
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -62,21 +65,25 @@ def scan_commits(cwd, rev_range, max_commits, exclude_fn):
 
         for pattern, label in BOT_AUTHOR_PATTERNS:
             if re.search(pattern, author_email, re.IGNORECASE):
-                findings.append(Finding(
-                    severity="high",
-                    category="git-history",
-                    location=f"commit {sha} ({subject})",
-                    message=f"{label}: {author_email}",
-                ))
+                findings.append(
+                    Finding(
+                        severity="high",
+                        category="git-history",
+                        location=f"commit {sha} ({subject})",
+                        message=f"{label}: {author_email}",
+                    )
+                )
 
         for pattern, label in TRAILER_PATTERNS + COMMIT_MSG_PATTERNS:
             if re.search(pattern, body, re.IGNORECASE):
-                findings.append(Finding(
-                    severity="high",
-                    category="git-history",
-                    location=f"commit {sha} ({subject})",
-                    message=label,
-                ))
+                findings.append(
+                    Finding(
+                        severity="high",
+                        category="git-history",
+                        location=f"commit {sha} ({subject})",
+                        message=label,
+                    )
+                )
     return findings
 
 
@@ -95,12 +102,14 @@ def scan_tags(cwd, exclude_fn):
             continue
         for pattern, label in TRAILER_PATTERNS + COMMIT_MSG_PATTERNS:
             if re.search(pattern, msg, re.IGNORECASE):
-                findings.append(Finding(
-                    severity="high",
-                    category="git-tag",
-                    location=f"tag {tag}",
-                    message=label,
-                ))
+                findings.append(
+                    Finding(
+                        severity="high",
+                        category="git-tag",
+                        location=f"tag {tag}",
+                        message=label,
+                    )
+                )
     return findings
 
 
@@ -121,12 +130,14 @@ def scan_branches(cwd, exclude_fn):
             short = branch
         for pattern in BRANCH_PATTERNS:
             if re.search(pattern, short, re.IGNORECASE):
-                findings.append(Finding(
-                    severity="medium",
-                    category="branch-name",
-                    location=branch,
-                    message=f"Branch name matches AI tool pattern: {pattern}",
-                ))
+                findings.append(
+                    Finding(
+                        severity="medium",
+                        category="branch-name",
+                        location=branch,
+                        message=f"Branch name matches AI tool pattern: {pattern}",
+                    )
+                )
     return findings
 
 
@@ -146,10 +157,12 @@ def scan_staged(cwd, exclude_fn):
             added = line[1:]
             for pattern, label in TRAILER_PATTERNS + COMMENT_PATTERNS:
                 if re.search(pattern, added, re.IGNORECASE):
-                    findings.append(Finding(
-                        severity="high" if "trailer" in label.lower() else "medium",
-                        category="staged-change",
-                        location=current_file or "(unknown file)",
-                        message=label,
-                    ))
+                    findings.append(
+                        Finding(
+                            severity="high" if "trailer" in label.lower() else "medium",
+                            category="staged-change",
+                            location=current_file or "(unknown file)",
+                            message=label,
+                        )
+                    )
     return findings

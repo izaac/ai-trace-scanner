@@ -8,13 +8,23 @@ TRAILER_PATTERNS = [
 ]
 
 COMMIT_MSG_PATTERNS = [
-    (r"\b(?:as an AI|as a language model|per your instructions)\b", "Agentic language in commit message"),
+    (
+        r"\b(?:as an AI|as a language model|per your instructions)\b",
+        "Agentic language in commit message",
+    ),
     (r"\breview:\s*Copilot\b", "Copilot review marker"),
-    (r"\bgenerated (?:by|with|using) (?:Copilot|Claude|GPT|AI|Cursor|Aider|Gemini)\b",
-     "AI generation attribution"),
-    (r"\b(?:copilot|claude|cursor|aider)\s+(?:suggested|generated|wrote|created)\b",
-     "AI tool attribution"),
-    (r"^[\U0001f300-\U0001faff\u2600-\u27bf\u2b50]", "Emoji prefix in commit subject (common AI convention)"),
+    (
+        r"\bgenerated (?:by|with|using) (?:Copilot|Claude|GPT|AI|Cursor|Aider|Gemini)\b",
+        "AI generation attribution",
+    ),
+    (
+        r"\b(?:copilot|claude|cursor|aider)\s+(?:suggested|generated|wrote|created)\b",
+        "AI tool attribution",
+    ),
+    (
+        r"^[\U0001f300-\U0001faff\u2600-\u27bf\u2b50]",
+        "Emoji prefix in commit subject (common AI convention)",
+    ),
 ]
 
 BOT_AUTHOR_PATTERNS = [
@@ -57,10 +67,14 @@ AGENT_CONFIG_GLOBS = [
 ]
 
 COMMENT_PATTERNS = [
-    (r"\bgenerated (?:by|with|using) (?:copilot|claude|gpt|chatgpt|ai|cursor|aider|gemini)\b",
-     "AI generation attribution in comment"),
+    (
+        r"\bgenerated (?:by|with|using) (?:copilot|claude|gpt|chatgpt|ai|cursor|aider|gemini)\b",
+        "AI generation attribution in comment",
+    ),
     (r"\bcopilot[- ]generated\b", "Copilot-generated marker"),
-    (r"\b(?:claude|gpt-?4|gpt-?3|chatgpt)\s+(?:wrote|generated|suggested|created)\b",
-     "AI tool attribution in comment"),
+    (
+        r"\b(?:claude|gpt-?4|gpt-?3|chatgpt)\s+(?:wrote|generated|suggested|created)\b",
+        "AI tool attribution in comment",
+    ),
     (r"@generated\s+by\s+(?:ai|copilot|claude)", "Generated-by annotation"),
 ]

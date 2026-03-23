@@ -14,15 +14,36 @@ from .patterns import AGENT_CONFIG_FILES, AGENT_CONFIG_GLOBS, COMMENT_PATTERNS
 TEXT_EXTENSIONS = {".md", ".rst", ".txt", ".adoc"}
 
 TEXT_FILENAMES = {
-    "Makefile", "Dockerfile", "Containerfile", "Jenkinsfile",
-    "Vagrantfile", "Rakefile", "Gemfile", "Procfile",
-    ".gitignore", ".dockerignore", ".editorconfig",
+    "Makefile",
+    "Dockerfile",
+    "Containerfile",
+    "Jenkinsfile",
+    "Vagrantfile",
+    "Rakefile",
+    "Gemfile",
+    "Procfile",
+    ".gitignore",
+    ".dockerignore",
+    ".editorconfig",
 }
 
 SKIP_DIRS = {
-    ".git", "node_modules", "vendor", "venv", ".venv", "__pycache__",
-    ".tox", ".mypy_cache", ".pytest_cache", "dist", "build",
-    ".terraform", ".tofu", "target", "bin", "obj",
+    ".git",
+    "node_modules",
+    "vendor",
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".terraform",
+    ".tofu",
+    "target",
+    "bin",
+    "obj",
 }
 
 SELF_DIR = Path(__file__).resolve().parent
@@ -60,10 +81,14 @@ def _extract_comments(filepath):
         line_start = lineno
         lineno += value.count("\n")
 
-        if ttype in Token.Comment or ttype in Token.Comment.Single \
-                or ttype in Token.Comment.Multiline or ttype in Token.Comment.Special \
-                or ttype is Token.Comment.Hashbang \
-                or str(ttype).startswith("Token.Comment"):
+        if (
+            ttype in Token.Comment
+            or ttype in Token.Comment.Single
+            or ttype in Token.Comment.Multiline
+            or ttype in Token.Comment.Special
+            or ttype is Token.Comment.Hashbang
+            or str(ttype).startswith("Token.Comment")
+        ):
             yield line_start, value
 
 
@@ -76,24 +101,28 @@ def _scan_file(filepath, root):
         for lineno, comment_text in _extract_comments(filepath):
             for pattern, label in COMMENT_PATTERNS:
                 if re.search(pattern, comment_text, re.IGNORECASE):
-                    findings.append(Finding(
-                        severity="medium",
-                        category="source-comment",
-                        location=f"{rel}:{lineno}",
-                        message=label,
-                    ))
+                    findings.append(
+                        Finding(
+                            severity="medium",
+                            category="source-comment",
+                            location=f"{rel}:{lineno}",
+                            message=label,
+                        )
+                    )
     elif _is_plain_text(filepath):
         try:
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            with open(filepath, encoding="utf-8", errors="ignore") as f:
                 for lineno, line in enumerate(f, 1):
                     for pattern, label in COMMENT_PATTERNS:
                         if re.search(pattern, line, re.IGNORECASE):
-                            findings.append(Finding(
-                                severity="medium",
-                                category="source-comment",
-                                location=f"{rel}:{lineno}",
-                                message=label,
-                            ))
+                            findings.append(
+                                Finding(
+                                    severity="medium",
+                                    category="source-comment",
+                                    location=f"{rel}:{lineno}",
+                                    message=label,
+                                )
+                            )
         except OSError:
             pass
 
@@ -118,23 +147,27 @@ def scan_config_files(root, exclude_fn):
             continue
         path = root / name
         if path.exists():
-            findings.append(Finding(
-                severity="high" if name.endswith(".md") else "medium",
-                category="config-file",
-                location=str(name),
-                message="AI assistant config file present",
-            ))
+            findings.append(
+                Finding(
+                    severity="high" if name.endswith(".md") else "medium",
+                    category="config-file",
+                    location=str(name),
+                    message="AI assistant config file present",
+                )
+            )
 
     for pattern in AGENT_CONFIG_GLOBS:
         for match in root.glob(pattern):
             rel = str(match.relative_to(root))
             if rel not in AGENT_CONFIG_FILES and not exclude_fn(rel):
-                findings.append(Finding(
-                    severity="medium",
-                    category="config-file",
-                    location=rel,
-                    message="AI assistant config file/directory present",
-                ))
+                findings.append(
+                    Finding(
+                        severity="medium",
+                        category="config-file",
+                        location=rel,
+                        message="AI assistant config file/directory present",
+                    )
+                )
     return findings
 
 

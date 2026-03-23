@@ -12,6 +12,13 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+dev = [
+    "black>=24.0",
+    "ruff>=0.4",
+    "mdformat>=0.7",
+    "mdformat-gfm>=0.3",
+    "mdformat-tables>=1.0",
+]
 
 [project.scripts]
 ai-trace-scan = "ai_trace_scan.cli:main"
@@ -19,3 +26,30 @@ ai-trace-scan = "ai_trace_scan.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line too long — black handles this
+    "SIM108", # ternary operator — readability preference
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ai_trace_scan"]
