@@ -46,6 +46,10 @@ def main():
     date_group = parser.add_argument_group("date normalization")
     date_group.add_argument("--fix-dates", action="store_true",
                             help="Rewrite commit timestamps to realistic spacing (destructive)")
+    date_group.add_argument("--dry-run", action="store_true",
+                            help="Show what --fix-dates would do without modifying history")
+    date_group.add_argument("--force", action="store_true",
+                            help="Skip safety checks (pushed commits, confirmation)")
     date_group.add_argument("--spread", type=float, default=3.0, metavar="HOURS",
                             help="Time span per work session (default: 3.0)")
     date_group.add_argument("--jitter", type=float, default=15.0, metavar="MINUTES",
@@ -85,7 +89,8 @@ def main():
                 print("Error: --burst format is SESSIONS,GAP_DAYS (e.g. 3,2)", file=sys.stderr)
                 sys.exit(2)
         ok = fix_dates(root, rev_range, spread_hours=args.spread,
-                       jitter_minutes=args.jitter, burst=burst)
+                       jitter_minutes=args.jitter, burst=burst,
+                       dry_run=args.dry_run, force=args.force)
         sys.exit(0 if ok else 2)
 
     # Normal scan mode

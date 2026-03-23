@@ -5,7 +5,18 @@ import subprocess
 import pytest
 from datetime import datetime, timedelta
 
-from ai_trace_scan.dates import _detect_clustering, scan_dates, fix_dates
+from ai_trace_scan.dates import (
+    _detect_clustering,
+    _check_clean_worktree,
+    _check_no_operation_in_progress,
+    _check_not_pushed,
+    _create_backup_branch,
+    _collect_tree_shas,
+    _verify_trees_preserved,
+    preflight_checks,
+    scan_dates,
+    fix_dates,
+)
 
 
 def _git_run(*args, cwd, env_extra=None):
@@ -143,3 +154,125 @@ class TestFixDates:
         _git_run("commit", "-m", "only commit", cwd=tmp_path)
         result = fix_dates(tmp_path, "HEAD", spread_hours=3.0)
         assert result is False
+
+    def test_dry_run_does_not_modify_history(self, clustered_repo):
+        # Get original SHAs
+        out = subprocess.run(
+            ["git", "--no-pager", "log", "--format=%H"],
+            cwd=clustered_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        original_shas = out.split("\n")
+
+        result = fix_dates(clustered_repo, "HEAD", spread_hours=3.0,
+                           jitter_minutes=0, dry_run=True)
+        assert result is True
+
+        # SHAs must be unchanged
+        out = subprocess.run(
+            ["git", "--no-pager", "log", "--format=%H"],
+            cwd=clustered_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert out.split("\n") == original_shas
+
+
+class TestSafetyChecks:
+    """Tests for paranoid safety checks."""
+
+    def test_clean_worktree_passes(self, clustered_repo):
+        err = _check_clean_worktree(clustered_repo)
+        assert err is None
+
+    def test_dirty_worktree_fails(self, clustered_repo):
+        (clustered_repo / "dirty.txt").write_text("uncommitted")
+        err = _check_clean_worktree(clustered_repo)
+        assert err is not None
+        assert "uncommitted" in err.lower()
+
+    def test_staged_changes_fail(self, clustered_repo):
+        (clustered_repo / "staged.txt").write_text("staged")
+        _git_run("add", "staged.txt", cwd=clustered_repo)
+        err = _check_clean_worktree(clustered_repo)
+        assert err is not None
+
+    def test_no_operation_passes(self, clustered_repo):
+        err = _check_no_operation_in_progress(clustered_repo)
+        assert err is None
+
+    def test_rebase_in_progress_fails(self, clustered_repo):
+        # Simulate rebase in progress
+        (clustered_repo / ".git" / "rebase-merge").mkdir()
+        err = _check_no_operation_in_progress(clustered_repo)
+        assert err is not None
+        assert "rebase" in err.lower()
+
+    def test_merge_in_progress_fails(self, clustered_repo):
+        (clustered_repo / ".git" / "MERGE_HEAD").write_text("abc123")
+        err = _check_no_operation_in_progress(clustered_repo)
+        assert err is not None
+        assert "merge" in err.lower()
+
+    def test_cherry_pick_in_progress_fails(self, clustered_repo):
+        (clustered_repo / ".git" / "CHERRY_PICK_HEAD").write_text("abc123")
+        err = _check_no_operation_in_progress(clustered_repo)
+        assert err is not None
+        assert "cherry" in err.lower()
+
+    def test_no_remotes_passes(self, clustered_repo):
+        shas = subprocess.run(
+            ["git", "rev-list", "HEAD"],
+            cwd=clustered_repo, capture_output=True, text=True,
+        ).stdout.strip().split("\n")
+        err = _check_not_pushed(clustered_repo, shas)
+        assert err is None  # no remotes = safe
+
+    def test_backup_branch_created(self, clustered_repo):
+        name = _create_backup_branch(clustered_repo)
+        assert name is not None
+        assert name.startswith("backup/fix-dates-")
+
+        # Branch actually exists
+        out = subprocess.run(
+            ["git", "branch", "--list", name],
+            cwd=clustered_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert name in out
+
+    def test_collect_tree_shas(self, clustered_repo):
+        trees = _collect_tree_shas(clustered_repo, "HEAD")
+        assert len(trees) > 0
+        # All values should be 40-char hex
+        for sha, tree in trees.items():
+            assert len(tree) == 40
+
+    def test_fix_dates_blocked_by_dirty_worktree(self, clustered_repo):
+        (clustered_repo / "dirty.txt").write_text("blocker")
+        result = fix_dates(clustered_repo, "HEAD", spread_hours=3.0)
+        assert result is False
+
+    def test_fix_dates_blocked_by_rebase(self, clustered_repo):
+        (clustered_repo / ".git" / "rebase-merge").mkdir()
+        result = fix_dates(clustered_repo, "HEAD", spread_hours=3.0)
+        assert result is False
+
+    def test_fix_dates_creates_backup(self, clustered_repo):
+        fix_dates(clustered_repo, "HEAD", spread_hours=3.0, jitter_minutes=0)
+
+        out = subprocess.run(
+            ["git", "branch", "--list", "backup/*"],
+            cwd=clustered_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert "backup/fix-dates-" in out
+
+    def test_preflight_all_clear(self, clustered_repo):
+        shas = subprocess.run(
+            ["git", "rev-list", "HEAD"],
+            cwd=clustered_repo, capture_output=True, text=True,
+        ).stdout.strip().split("\n")
+        ok, msgs = preflight_checks(clustered_repo, shas)
+        assert ok is True
+
+    def test_preflight_blocks_dirty(self, clustered_repo):
+        (clustered_repo / "dirty.txt").write_text("no")
+        ok, msgs = preflight_checks(clustered_repo, [])
+        assert ok is False
+        assert any("uncommitted" in m.lower() for m in msgs)
