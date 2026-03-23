@@ -1,4 +1,4 @@
-.PHONY: install run test lint format clean
+.PHONY: install run test lint format setup-hooks clean
 
 UV := $(shell command -v uv 2>/dev/null)
 IS_NIXOS := $(shell test -e /etc/NIXOS && echo 1)
@@ -35,6 +35,9 @@ format:
 	uv run --extra dev ruff check --fix ai_trace_scan/ tests/
 	uv run --extra dev black ai_trace_scan/ tests/
 	uv run --extra dev mdformat *.md
+
+setup-hooks:
+	uv run --extra dev pre-commit install
 
 clean:
 	rm -rf .venv

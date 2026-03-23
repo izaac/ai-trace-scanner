@@ -18,6 +18,7 @@ dev = [
     "mdformat>=0.7",
     "mdformat-gfm>=0.3",
     "mdformat-tables>=1.0",
+    "pre-commit>=3.7",
 ]
 
 [project.scripts]

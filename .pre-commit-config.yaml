@@ -1,0 +1,37 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.8
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.19
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-tables
+
+  - repo: local
+    hooks:
+      - id: ai-trace-scan
+        name: AI trace scan
+        entry: uv run ai-trace-scan --staged --quiet
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: pytest
+        name: Unit tests
+        entry: uv run --extra test pytest tests/ -q --no-header
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        always_run: true

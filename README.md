@@ -24,6 +24,26 @@ make test
 
 Runs the full test suite (168 tests) via pytest.
 
+### Pre-commit hooks
+
+Activate hooks that run linters, formatters, AI trace scan, and tests
+on every commit:
+
+```sh
+make setup-hooks
+```
+
+Hooks (via [pre-commit](https://pre-commit.com)):
+
+| Hook          | What it does                              |
+| ------------- | ----------------------------------------- |
+| ruff          | Lint + auto-fix Python                    |
+| ruff-format   | Format Python (ruff's built-in formatter) |
+| black         | Format Python                             |
+| mdformat      | Format Markdown                           |
+| ai-trace-scan | Scan staged changes for AI traces         |
+| pytest        | Run unit tests                            |
+
 ### Platform notes
 
 | Platform                 | How `uv` is installed                                                         |
