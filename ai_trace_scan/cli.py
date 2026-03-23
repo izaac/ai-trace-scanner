@@ -50,6 +50,9 @@ def main():
                             help="Show what --fix-dates would do without modifying history")
     date_group.add_argument("--force", action="store_true",
                             help="Skip safety checks (pushed commits, confirmation)")
+    date_group.add_argument("--anchor", choices=["present", "first-commit"],
+                            default="present",
+                            help="Anchor last commit to now (default) or keep first commit's date")
     date_group.add_argument("--spread", type=float, default=3.0, metavar="HOURS",
                             help="Time span per work session (default: 3.0)")
     date_group.add_argument("--jitter", type=float, default=15.0, metavar="MINUTES",
@@ -90,7 +93,8 @@ def main():
                 sys.exit(2)
         ok = fix_dates(root, rev_range, spread_hours=args.spread,
                        jitter_minutes=args.jitter, burst=burst,
-                       dry_run=args.dry_run, force=args.force)
+                       dry_run=args.dry_run, force=args.force,
+                       anchor=args.anchor)
         sys.exit(0 if ok else 2)
 
     # Normal scan mode

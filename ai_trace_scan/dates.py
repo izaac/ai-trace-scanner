@@ -193,7 +193,7 @@ def scan_dates(cwd, rev_range, max_commits, threshold_minutes=5):
 
 
 def fix_dates(cwd, rev_range, spread_hours=3.0, jitter_minutes=15.0, burst=None,
-              dry_run=False, force=False):
+              dry_run=False, force=False, anchor="present"):
     """Rewrite commit timestamps to spread over a realistic time range.
 
     Args:
@@ -205,6 +205,9 @@ def fix_dates(cwd, rev_range, spread_hours=3.0, jitter_minutes=15.0, burst=None,
                sessions separated by gap_days idle days between them
         dry_run: if True, show what would happen without modifying history
         force: if True, skip confirmation and allow rewriting pushed commits
+        anchor: "present" (default) anchors last commit to now and spreads
+                backwards; "first-commit" keeps the first commit's date and
+                spreads forward (may produce future dates)
     """
     out = _git("log", "--format=%H %aI", rev_range, cwd=cwd)
     if not out:
@@ -282,6 +285,18 @@ def fix_dates(cwd, rev_range, spread_hours=3.0, jitter_minutes=15.0, burst=None,
             else:
                 jitter = timedelta(minutes=random.uniform(-jitter_minutes, jitter_minutes))
             new_dates[sha] = (target + jitter).isoformat()
+
+    # --- Anchor adjustment ---
+    # By default, shift the whole series so the last commit lands at "now"
+    if anchor == "present":
+        now = datetime.now(timezone.utc).astimezone()
+        # Find the latest computed date
+        latest = max(datetime.fromisoformat(d) for d in new_dates.values())
+        shift = now - latest
+        new_dates = {
+            sha: (datetime.fromisoformat(d) + shift).isoformat()
+            for sha, d in new_dates.items()
+        }
 
     if dry_run:
         print(f"\n  [DRY RUN] Would rewrite {count} commits:\n")
