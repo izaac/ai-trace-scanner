@@ -13,6 +13,7 @@ from ai_trace_scan.dates import (
     _collect_tree_shas,
     _create_backup_branch,
     _detect_clustering,
+    _skip_weekends,
     fix_dates,
     preflight_checks,
     scan_dates,
@@ -325,3 +326,95 @@ class TestSafetyChecks:
         ok, msgs = preflight_checks(clustered_repo, [])
         assert ok is False
         assert any("uncommitted" in m.lower() for m in msgs)
+
+
+class TestSkipWeekends:
+    """Tests for --no-weekends logic."""
+
+    def test_saturday_moves_to_monday(self):
+        # 2026-03-28 is a Saturday
+        dates = {"abc": "2026-03-28T14:00:00-07:00"}
+        result = _skip_weekends(dates)
+        dt = datetime.fromisoformat(result["abc"])
+        assert dt.weekday() == 0  # Monday
+        assert dt.day == 30
+
+    def test_sunday_moves_to_monday(self):
+        # 2026-03-29 is a Sunday
+        dates = {"abc": "2026-03-29T10:30:00-07:00"}
+        result = _skip_weekends(dates)
+        dt = datetime.fromisoformat(result["abc"])
+        assert dt.weekday() == 0  # Monday
+        assert dt.day == 30
+
+    def test_weekday_unchanged(self):
+        # 2026-03-27 is a Friday
+        dates = {"abc": "2026-03-27T09:00:00-07:00"}
+        result = _skip_weekends(dates)
+        dt = datetime.fromisoformat(result["abc"])
+        assert dt.weekday() == 4  # Friday
+        assert dt.day == 27
+
+    def test_preserves_time_of_day(self):
+        dates = {"abc": "2026-03-28T15:42:30-07:00"}
+        result = _skip_weekends(dates)
+        dt = datetime.fromisoformat(result["abc"])
+        assert dt.hour == 15
+        assert dt.minute == 42
+        assert dt.second == 30
+
+    def test_multiple_commits_mixed(self):
+        dates = {
+            "a": "2026-03-27T10:00:00-07:00",  # Friday
+            "b": "2026-03-28T11:00:00-07:00",  # Saturday
+            "c": "2026-03-29T12:00:00-07:00",  # Sunday
+            "d": "2026-03-30T13:00:00-07:00",  # Monday
+        }
+        result = _skip_weekends(dates)
+        days = {sha: datetime.fromisoformat(d).weekday() for sha, d in result.items()}
+        assert days["a"] == 4  # Friday stays
+        assert days["b"] == 0  # Saturday -> Monday
+        assert days["c"] == 0  # Sunday -> Monday
+        assert days["d"] == 0  # Monday stays
+
+    def test_fix_dates_with_no_weekends(self, tmp_path):
+        """Integration: commits landing on weekends get shifted."""
+        # Create a repo with commits on a Saturday
+        _git_run("init", cwd=tmp_path)
+        _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
+        _git_run("config", "user.name", "Test", cwd=tmp_path)
+
+        # 2026-03-28 is Saturday
+        base = datetime(2026, 3, 28, 10, 0, 0)
+        for i in range(3):
+            dt = base + timedelta(minutes=i)
+            datestr = dt.strftime("%Y-%m-%dT%H:%M:%S-07:00")
+            (tmp_path / f"file{i}.txt").write_text(str(i))
+            _git_run("add", ".", cwd=tmp_path)
+            _git_run(
+                "commit",
+                "-m",
+                f"commit {i}",
+                cwd=tmp_path,
+                env_extra={"GIT_AUTHOR_DATE": datestr, "GIT_COMMITTER_DATE": datestr},
+            )
+
+        result = fix_dates(
+            tmp_path,
+            "HEAD",
+            spread_hours=3.0,
+            jitter_minutes=0,
+            no_weekends=True,
+            anchor="first-commit",
+        )
+        assert result is True
+
+        out = subprocess.run(
+            ["git", "--no-pager", "log", "--format=%aI"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        ).stdout
+        for line in out.strip().split("\n"):
+            dt = datetime.fromisoformat(line)
+            assert dt.weekday() < 5, f"Commit on weekend: {line}"

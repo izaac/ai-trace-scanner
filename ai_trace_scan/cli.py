@@ -92,6 +92,11 @@ def main():
         help="Split commits into work sessions with idle days between (e.g. 3,2)",
     )
     date_group.add_argument(
+        "--no-weekends",
+        action="store_true",
+        help="Shift Saturday/Sunday commits to the following Monday",
+    )
+    date_group.add_argument(
         "--cluster-threshold",
         type=float,
         default=5.0,
@@ -137,6 +142,7 @@ def main():
             dry_run=args.dry_run,
             force=args.force,
             anchor=args.anchor,
+            no_weekends=args.no_weekends,
         )
         sys.exit(0 if ok else 2)
 

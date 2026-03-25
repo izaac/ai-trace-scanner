@@ -201,6 +201,20 @@ def scan_dates(cwd, rev_range, max_commits, threshold_minutes=5):
     return findings
 
 
+def _skip_weekends(new_dates):
+    """Shift any Saturday/Sunday dates to the following Monday, keeping time-of-day."""
+    shifted = {}
+    for sha, datestr in new_dates.items():
+        dt = datetime.fromisoformat(datestr)
+        weekday = dt.weekday()  # 5 = Saturday, 6 = Sunday
+        if weekday == 5:
+            dt += timedelta(days=2)
+        elif weekday == 6:
+            dt += timedelta(days=1)
+        shifted[sha] = dt.isoformat()
+    return shifted
+
+
 def fix_dates(
     cwd,
     rev_range,
@@ -210,6 +224,7 @@ def fix_dates(
     dry_run=False,
     force=False,
     anchor="present",
+    no_weekends=False,
 ):
     """Rewrite commit timestamps to spread over a realistic time range.
 
@@ -225,6 +240,7 @@ def fix_dates(
         anchor: "present" (default) anchors last commit to now and spreads
                 backwards; "first-commit" keeps the first commit's date and
                 spreads forward (may produce future dates)
+        no_weekends: if True, shift any Saturday/Sunday commits to Monday
     """
     out = _git("log", "--format=%H %aI", rev_range, cwd=cwd)
     if not out:
@@ -313,6 +329,10 @@ def fix_dates(
         new_dates = {
             sha: (datetime.fromisoformat(d) + shift).isoformat() for sha, d in new_dates.items()
         }
+
+    # --- Weekend avoidance ---
+    if no_weekends:
+        new_dates = _skip_weekends(new_dates)
 
     if dry_run:
         print(f"\n  [DRY RUN] Would rewrite {count} commits:\n")
