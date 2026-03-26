@@ -9,6 +9,7 @@ from .config import load_config, make_exclude_filter
 from .dates import fix_dates, scan_dates
 from .git_scan import (
     get_default_branch,
+    get_unpushed_range,
     is_git_repo,
     scan_branches,
     scan_commits,
@@ -57,6 +58,11 @@ def main():
         "--fix-dates",
         action="store_true",
         help="Rewrite commit timestamps to realistic spacing (destructive)",
+    )
+    date_group.add_argument(
+        "--all-commits",
+        action="store_true",
+        help="Rewrite ALL commits in the branch (default: only unpushed commits)",
     )
     date_group.add_argument(
         "--dry-run",
@@ -120,11 +126,36 @@ def main():
         if not has_git:
             print("Error: --fix-dates requires a git repository", file=sys.stderr)
             sys.exit(2)
+
+        # Determine rev range
         if args.branch:
             default = get_default_branch(root)
             rev_range = f"{default}..{args.branch}" if default else args.branch
-        else:
+        elif args.all_commits:
+            print(
+                "  WARNING: --all-commits will rewrite the ENTIRE branch history.",
+                file=sys.stderr,
+            )
+            if not args.force and not args.dry_run:
+                try:
+                    answer = input("  Continue? [y/N] ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    answer = ""
+                if answer != "y":
+                    print("  Aborted.", file=sys.stderr)
+                    sys.exit(0)
             rev_range = "HEAD"
+        else:
+            # Default: only unpushed commits
+            rev_range = get_unpushed_range(root)
+            if rev_range is None:
+                print(
+                    "Error: No remote tracking branch found. Cannot determine unpushed commits.\n"
+                    "  Use --branch <name> to target a specific branch, or\n"
+                    "  Use --all-commits to rewrite the entire branch history.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
         burst = None
         if args.burst:
             try:

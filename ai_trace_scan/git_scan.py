@@ -41,6 +41,29 @@ def get_default_branch(cwd):
     return None
 
 
+def get_unpushed_range(cwd):
+    """Return a rev range covering only unpushed commits.
+
+    Tries (in order):
+    1. @{upstream}..HEAD — if current branch tracks a remote
+    2. origin/<default>..HEAD — if origin exists with main/master
+    3. None — no remote baseline found
+    """
+    # Try upstream tracking ref
+    upstream = git("rev-parse", "--abbrev-ref", "@{upstream}", cwd=cwd)
+    if upstream and upstream.strip():
+        return f"{upstream.strip()}..HEAD"
+
+    # Try origin/<default>
+    default = get_default_branch(cwd)
+    if default:
+        origin_ref = f"origin/{default}"
+        if git("rev-parse", "--verify", origin_ref, cwd=cwd) is not None:
+            return f"{origin_ref}..HEAD"
+
+    return None
+
+
 def scan_commits(cwd, rev_range, max_commits, exclude_fn):
     findings = []
     fmt = "%H%n%aE%n%s%n%b%n---END---"
