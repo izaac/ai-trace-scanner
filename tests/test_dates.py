@@ -3,6 +3,7 @@
 import os
 import subprocess
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -33,16 +34,17 @@ def _git_run(*args, cwd, env_extra=None):
     subprocess.run(["git", *list(args)], cwd=cwd, capture_output=True, check=True, env=env)
 
 
-def _make_clustered_repo(tmp_path, count=5, gap_seconds=60):
+def _make_clustered_repo(tmp_path: Path, count: int = 5, gap_seconds: int = 60) -> Path:
     """Create a repo with tightly clustered commits."""
     _git_run("init", cwd=tmp_path)
     _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
     _git_run("config", "user.name", "Test", cwd=tmp_path)
 
-    base = datetime(2026, 3, 29, 10, 0, 0)
+    # Use yesterday to avoid future-date detection
+    base: datetime = datetime.now(tz=timezone.utc) - timedelta(days=1)
     for i in range(count):
-        dt = base + timedelta(seconds=gap_seconds * i)
-        datestr = dt.strftime("%Y-%m-%dT%H:%M:%S-07:00")
+        dt: datetime = base + timedelta(seconds=gap_seconds * i)
+        datestr: str = dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
         (tmp_path / f"file{i}.txt").write_text(str(i))
         _git_run("add", ".", cwd=tmp_path)
         _git_run(
@@ -105,6 +107,34 @@ class TestScanDates:
         low_findings = [f for f in findings if f.severity == "low"]
         assert len(low_findings) > 0
         assert all("after previous commit" in f.message for f in low_findings)
+
+    def test_detects_future_dated_commits(self, tmp_path):
+        _git_run("init", cwd=tmp_path)
+        _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
+        _git_run("config", "user.name", "Test", cwd=tmp_path)
+
+        # Create a commit dated 2 days in the future
+        future = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        datestr = future.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        (tmp_path / "file.txt").write_text("future")
+        _git_run("add", ".", cwd=tmp_path)
+        _git_run(
+            "commit",
+            "-m",
+            "future commit",
+            cwd=tmp_path,
+            env_extra={"GIT_AUTHOR_DATE": datestr, "GIT_COMMITTER_DATE": datestr},
+        )
+
+        findings = scan_dates(tmp_path, "HEAD", 50, threshold_minutes=5)
+        future_findings = [f for f in findings if f.category == "future-date"]
+        assert len(future_findings) == 1
+        assert "future" in future_findings[0].message.lower()
+
+    def test_no_future_finding_for_normal_commits(self, clustered_repo):
+        findings = scan_dates(clustered_repo, "HEAD", 50, threshold_minutes=5)
+        future_findings = [f for f in findings if f.category == "future-date"]
+        assert len(future_findings) == 0
 
 
 class TestFixDates:
@@ -377,18 +407,17 @@ class TestSkipWeekends:
         assert days["c"] == 0  # Sunday -> Monday
         assert days["d"] == 0  # Monday stays
 
-    def test_fix_dates_with_no_weekends(self, tmp_path):
+    def test_fix_dates_with_no_weekends(self, tmp_path: Path) -> None:
         """Integration: commits landing on weekends get shifted."""
-        # Create a repo with commits on a Saturday
         _git_run("init", cwd=tmp_path)
         _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
         _git_run("config", "user.name", "Test", cwd=tmp_path)
 
-        # 2026-03-28 is Saturday
-        base = datetime(2026, 3, 28, 10, 0, 0)
+        # Use a Saturday 2 weeks in the past so --no-weekends shift stays in the past
+        base: datetime = datetime(2026, 3, 14, 10, 0, 0)  # Saturday Mar 14
         for i in range(3):
-            dt = base + timedelta(minutes=i)
-            datestr = dt.strftime("%Y-%m-%dT%H:%M:%S-07:00")
+            dt: datetime = base + timedelta(minutes=i)
+            datestr: str = dt.strftime("%Y-%m-%dT%H:%M:%S-07:00")
             (tmp_path / f"file{i}.txt").write_text(str(i))
             _git_run("add", ".", cwd=tmp_path)
             _git_run(
@@ -399,7 +428,7 @@ class TestSkipWeekends:
                 env_extra={"GIT_AUTHOR_DATE": datestr, "GIT_COMMITTER_DATE": datestr},
             )
 
-        result = fix_dates(
+        result: bool | None = fix_dates(
             tmp_path,
             "HEAD",
             spread_hours=3.0,
@@ -409,7 +438,7 @@ class TestSkipWeekends:
         )
         assert result is True
 
-        out = subprocess.run(
+        out: str = subprocess.run(
             ["git", "--no-pager", "log", "--format=%aI"],
             cwd=tmp_path,
             capture_output=True,
@@ -418,3 +447,35 @@ class TestSkipWeekends:
         for line in out.strip().split("\n"):
             dt = datetime.fromisoformat(line)
             assert dt.weekday() < 5, f"Commit on weekend: {line}"
+
+    def test_fix_dates_blocked_by_future_guard(self, tmp_path: Path) -> None:
+        """fix-dates refuses when --no-weekends would produce future dates."""
+        _git_run("init", cwd=tmp_path)
+        _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
+        _git_run("config", "user.name", "Test", cwd=tmp_path)
+
+        # Use today (Saturday Mar 29) so --no-weekends shifts to Monday (future)
+        base: datetime = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+        for i in range(3):
+            dt: datetime = base + timedelta(minutes=i)
+            datestr: str = dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            (tmp_path / f"file{i}.txt").write_text(str(i))
+            _git_run("add", ".", cwd=tmp_path)
+            _git_run(
+                "commit",
+                "-m",
+                f"commit {i}",
+                cwd=tmp_path,
+                env_extra={"GIT_AUTHOR_DATE": datestr, "GIT_COMMITTER_DATE": datestr},
+            )
+
+        # Today is Saturday; --no-weekends + first-commit anchor shifts to Monday = future
+        result: bool | None = fix_dates(
+            tmp_path,
+            "HEAD",
+            spread_hours=3.0,
+            jitter_minutes=0,
+            no_weekends=True,
+            anchor="first-commit",
+        )
+        assert result is False

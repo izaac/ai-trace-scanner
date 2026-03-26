@@ -168,7 +168,7 @@ def scan_dates(
     max_commits: int,
     threshold_minutes: float = 5,
 ) -> list[Finding]:
-    """Scan for suspiciously tight commit clustering."""
+    """Scan for suspiciously tight commit clustering and future-dated commits."""
     findings: list[Finding] = []
     out = _git("log", f"--max-count={max_commits}", "--format=%H %aI", rev_range, cwd=cwd)
     if not out:
@@ -181,6 +181,25 @@ def scan_dates(
         sha, datestr = line.split(" ", 1)
         dt = datetime.fromisoformat(datestr)
         entries.append((sha[:12], dt))
+
+    if not entries:
+        return findings
+
+    # Check for future-dated commits
+    now = datetime.now(timezone.utc)
+    for sha, dt in entries:
+        dt_utc = dt.astimezone(timezone.utc) if dt.tzinfo else dt
+        if dt_utc > now + timedelta(minutes=5):  # 5min tolerance for clock skew
+            delta = dt_utc - now
+            hours = delta.total_seconds() / 3600
+            findings.append(
+                Finding(
+                    severity="medium",
+                    category="future-date",
+                    location=f"commit {sha}",
+                    message=f"Commit is dated {hours:.1f}h in the future ({dt.isoformat()})",
+                )
+            )
 
     if len(entries) < 2:
         return findings
@@ -350,6 +369,29 @@ def fix_dates(
     # --- Weekend avoidance ---
     if no_weekends:
         new_dates = _skip_weekends(new_dates)
+
+    # --- Future date guard ---
+    now = datetime.now(timezone.utc)
+    future_dates: list[tuple[str, str]] = []
+    for sha, datestr in new_dates.items():
+        dt = datetime.fromisoformat(datestr)
+        dt_utc = dt.astimezone(timezone.utc) if dt.tzinfo else dt
+        if dt_utc > now + timedelta(minutes=5):
+            future_dates.append((sha[:12], datestr))
+    if future_dates:
+        print(
+            f"  ERROR: {len(future_dates)} commit(s) would land in the future:",
+            file=sys.stderr,
+        )
+        for sha, datestr in future_dates[:5]:
+            print(f"    {sha}  {datestr}", file=sys.stderr)
+        if no_weekends:
+            print(
+                "\n  This is likely caused by --no-weekends shifting weekend dates forward.",
+                file=sys.stderr,
+            )
+        print("  Try without --no-weekends, or use --burst with smaller gaps.", file=sys.stderr)
+        return False
 
     if dry_run:
         # Build subject lookup from entries
