@@ -201,6 +201,12 @@ ai-scan --format json /path/to/repo | jq '[.[] | select(.severity == "high")]'
 The scanner flags commits that are suspiciously close together. It can also
 rewrite timestamps to look like natural work sessions.
 
+> **WARNING:** `--fix-dates` rewrites git history. While safety checks
+> (backup branches, tree verification, future-date guards) and unit tests
+> are in place, unforeseen scenarios may still cause data loss. Always keep
+> a backup of your repository before rewriting history. The author is not
+> responsible for any data loss resulting from the use of this tool.
+
 ### How it works
 
 By default, dates are anchored to the present — the last commit lands at
