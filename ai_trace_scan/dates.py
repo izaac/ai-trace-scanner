@@ -429,6 +429,7 @@ def _sign_commits(cwd: str | Path) -> bool:
                 "rebase",
                 "--root",
                 "--exec",
+                'GIT_COMMITTER_DATE="$(git log -1 --format=%aI)" '
                 "git commit --amend --no-edit -S",
                 "--committer-date-is-author-date",
             ],
