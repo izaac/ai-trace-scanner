@@ -1,7 +1,14 @@
 """ai-trace-scan — Detect AI/agentic authorship fingerprints in a codebase."""
 
-from collections import namedtuple
+from __future__ import annotations
 
-__version__ = "0.5.0"
+from typing import NamedTuple
 
-Finding = namedtuple("Finding", ["severity", "category", "location", "message"])
+__version__: str = "0.5.0"
+
+
+class Finding(NamedTuple):
+    severity: str
+    category: str
+    location: str
+    message: str

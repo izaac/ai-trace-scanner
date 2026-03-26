@@ -1,13 +1,15 @@
 """Pattern constants for AI trace detection."""
 
-TRAILER_PATTERNS = [
+from __future__ import annotations
+
+TRAILER_PATTERNS: list[tuple[str, str]] = [
     (r"Co-authored-by:.*(?:Copilot|copilot|GitHub\sCopilot)", "Co-authored-by Copilot trailer"),
     (r"Co-authored-by:.*(?:Claude|Anthropic)", "Co-authored-by Claude trailer"),
     (r"Co-authored-by:.*(?:GPT|OpenAI|ChatGPT)", "Co-authored-by GPT/OpenAI trailer"),
     (r"Co-authored-by:.*(?:Cursor|Aider|Codeium|Tabnine|Gemini)", "Co-authored-by AI tool trailer"),
 ]
 
-COMMIT_MSG_PATTERNS = [
+COMMIT_MSG_PATTERNS: list[tuple[str, str]] = [
     (
         r"\b(?:as an AI|as a language model|per your instructions)\b",
         "Agentic language in commit message",
@@ -27,7 +29,7 @@ COMMIT_MSG_PATTERNS = [
     ),
 ]
 
-BOT_AUTHOR_PATTERNS = [
+BOT_AUTHOR_PATTERNS: list[tuple[str, str]] = [
     (r"copilot\[bot\]", "Copilot bot author"),
     (r"github-actions\[bot\].*copilot", "GitHub Actions Copilot bot"),
     (r"\+Copilot@users\.noreply\.github\.com", "Copilot noreply email"),
@@ -35,7 +37,7 @@ BOT_AUTHOR_PATTERNS = [
     (r"sweep\[bot\]", "Sweep bot author"),
 ]
 
-BRANCH_PATTERNS = [
+BRANCH_PATTERNS: list[str] = [
     r"^copilot/",
     r"^claude/",
     r"^ai[-/]",
@@ -46,7 +48,7 @@ BRANCH_PATTERNS = [
     r"^sweep[-/]",
 ]
 
-AGENT_CONFIG_FILES = [
+AGENT_CONFIG_FILES: list[str] = [
     "AGENTS.md",
     "CLAUDE.md",
     "GEMINI.md",
@@ -60,13 +62,13 @@ AGENT_CONFIG_FILES = [
     ".github/copilot-review-instructions.md",
 ]
 
-AGENT_CONFIG_GLOBS = [
+AGENT_CONFIG_GLOBS: list[str] = [
     ".cursor/",
     ".aider*",
     ".copilot/",
 ]
 
-COMMENT_PATTERNS = [
+COMMENT_PATTERNS: list[tuple[str, str]] = [
     (
         r"\bgenerated (?:by|with|using) (?:copilot|claude|gpt|chatgpt|ai|cursor|aider|gemini)\b",
         "AI generation attribution in comment",

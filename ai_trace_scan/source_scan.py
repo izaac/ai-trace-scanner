@@ -1,19 +1,23 @@
 """Source tree and file comment scanners."""
 
+from __future__ import annotations
+
 import os
 import re
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import pathspec
 from pygments import lexers
+from pygments.lexer import Lexer
 from pygments.token import Token
 
 from . import Finding
 from .patterns import AGENT_CONFIG_FILES, AGENT_CONFIG_GLOBS, COMMENT_PATTERNS
 
-TEXT_EXTENSIONS = {".md", ".rst", ".txt", ".adoc"}
+TEXT_EXTENSIONS: set[str] = {".md", ".rst", ".txt", ".adoc"}
 
-TEXT_FILENAMES = {
+TEXT_FILENAMES: set[str] = {
     "Makefile",
     "Dockerfile",
     "Containerfile",
@@ -27,7 +31,7 @@ TEXT_FILENAMES = {
     ".editorconfig",
 }
 
-SKIP_DIRS = {
+SKIP_DIRS: set[str] = {
     ".git",
     "node_modules",
     "vendor",
@@ -46,19 +50,19 @@ SKIP_DIRS = {
     "obj",
 }
 
-SELF_DIR = Path(__file__).resolve().parent
+SELF_DIR: Path = Path(__file__).resolve().parent
 
 
-def _is_plain_text(path):
+def _is_plain_text(path: Path) -> bool:
     if path.name in TEXT_FILENAMES:
         return True
     return path.suffix.lower() in TEXT_EXTENSIONS
 
 
-def _get_lexer(filepath):
+def _get_lexer(filepath: Path) -> Lexer | None:
     try:
         lexer = lexers.get_lexer_for_filename(filepath.name)
-        # TextLexer doesn't parse comments — treat as plain text
+        # TextLexer doesn't parse comments -- treat as plain text
         if lexer.__class__.__name__ == "TextLexer":
             return None
         return lexer
@@ -66,7 +70,7 @@ def _get_lexer(filepath):
         return None
 
 
-def _extract_comments(filepath):
+def _extract_comments(filepath: Path) -> Generator[tuple[int, str], None, None]:
     try:
         source = filepath.read_text(encoding="utf-8", errors="ignore")
     except OSError:
@@ -76,24 +80,24 @@ def _extract_comments(filepath):
     if not lexer:
         return
 
-    lineno = 1
+    lineno: int = 1
     for ttype, value in lexer.get_tokens(source):
         line_start = lineno
         lineno += value.count("\n")
 
         if (
-            ttype in Token.Comment
-            or ttype in Token.Comment.Single
-            or ttype in Token.Comment.Multiline
-            or ttype in Token.Comment.Special
+            ttype in Token.Comment  # type: ignore[comparison-overlap]
+            or ttype in Token.Comment.Single  # type: ignore[comparison-overlap]
+            or ttype in Token.Comment.Multiline  # type: ignore[comparison-overlap]
+            or ttype in Token.Comment.Special  # type: ignore[comparison-overlap]
             or ttype is Token.Comment.Hashbang
             or str(ttype).startswith("Token.Comment")
         ):
             yield line_start, value
 
 
-def _scan_file(filepath, root):
-    findings = []
+def _scan_file(filepath: Path, root: Path) -> list[Finding]:
+    findings: list[Finding] = []
     rel = filepath.relative_to(root)
     lexer = _get_lexer(filepath)
 
@@ -129,7 +133,7 @@ def _scan_file(filepath, root):
     return findings
 
 
-def _load_gitignore(root):
+def _load_gitignore(root: Path) -> pathspec.PathSpec | None:
     gitignore_path = root / ".gitignore"
     if not gitignore_path.is_file():
         return None
@@ -140,8 +144,8 @@ def _load_gitignore(root):
         return None
 
 
-def scan_config_files(root, exclude_fn):
-    findings = []
+def scan_config_files(root: Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    findings: list[Finding] = []
     for name in AGENT_CONFIG_FILES:
         if exclude_fn(name):
             continue
@@ -171,9 +175,9 @@ def scan_config_files(root, exclude_fn):
     return findings
 
 
-def scan_source_tree(root, exclude_fn):
-    findings = []
-    skip_self = root == SELF_DIR or SELF_DIR.is_relative_to(root)
+def scan_source_tree(root: Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    findings: list[Finding] = []
+    skip_self: bool = root == SELF_DIR or SELF_DIR.is_relative_to(root)
     ignore_spec = _load_gitignore(root)
 
     for dirpath, dirnames, filenames in os.walk(root):

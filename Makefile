@@ -29,6 +29,7 @@ test:
 lint:
 	uv run --extra dev ruff check ai_trace_scan/ tests/
 	uv run --extra dev black --check ai_trace_scan/ tests/
+	uv run --extra dev mypy ai_trace_scan/
 	uv run --extra dev mdformat --check *.md
 
 format:

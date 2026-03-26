@@ -1,7 +1,11 @@
 """Git operations and git-related scanners."""
 
+from __future__ import annotations
+
 import re
 import subprocess
+from collections.abc import Callable
+from pathlib import Path
 
 from . import Finding
 from .patterns import (
@@ -13,7 +17,7 @@ from .patterns import (
 )
 
 
-def git(*args, cwd=None):
+def git(*args: str, cwd: str | Path | None = None) -> str | None:
     try:
         r = subprocess.run(
             ["git", "--no-pager", *list(args)],
@@ -27,11 +31,11 @@ def git(*args, cwd=None):
         return None
 
 
-def is_git_repo(path):
+def is_git_repo(path: str | Path) -> bool:
     return git("rev-parse", "--git-dir", cwd=path) is not None
 
 
-def get_default_branch(cwd):
+def get_default_branch(cwd: str | Path) -> str | None:
     for name in ("main", "master"):
         if git("rev-parse", "--verify", name, cwd=cwd) is not None:
             return name
@@ -41,7 +45,7 @@ def get_default_branch(cwd):
     return None
 
 
-def get_unpushed_range(cwd):
+def get_unpushed_range(cwd: str | Path) -> str | None:
     """Return a rev range covering only unpushed commits.
 
     Tries (in order):
@@ -64,8 +68,13 @@ def get_unpushed_range(cwd):
     return None
 
 
-def scan_commits(cwd, rev_range, max_commits, exclude_fn):
-    findings = []
+def scan_commits(
+    cwd: str | Path,
+    rev_range: str,
+    max_commits: int,
+    exclude_fn: Callable[[str], bool],
+) -> list[Finding]:
+    findings: list[Finding] = []
     fmt = "%H%n%aE%n%s%n%b%n---END---"
     out = git("log", f"--max-count={max_commits}", f"--format={fmt}", rev_range, cwd=cwd)
     if not out:
@@ -110,8 +119,8 @@ def scan_commits(cwd, rev_range, max_commits, exclude_fn):
     return findings
 
 
-def scan_tags(cwd, exclude_fn):
-    findings = []
+def scan_tags(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    findings: list[Finding] = []
     out = git("tag", "-l", cwd=cwd)
     if not out:
         return findings
@@ -136,8 +145,8 @@ def scan_tags(cwd, exclude_fn):
     return findings
 
 
-def scan_branches(cwd, exclude_fn):
-    findings = []
+def scan_branches(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    findings: list[Finding] = []
     out = git("branch", "-a", "--format=%(refname:short)", cwd=cwd)
     if not out:
         return findings
@@ -164,13 +173,13 @@ def scan_branches(cwd, exclude_fn):
     return findings
 
 
-def scan_staged(cwd, exclude_fn):
-    findings = []
+def scan_staged(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    findings: list[Finding] = []
     out = git("diff", "--cached", "--unified=0", cwd=cwd)
     if not out:
         return findings
 
-    current_file = None
+    current_file: str | None = None
     for line in out.split("\n"):
         if line.startswith("+++ b/"):
             current_file = line[6:]

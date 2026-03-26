@@ -1,10 +1,12 @@
 """CLI entry point."""
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import Finding, __version__
 from .config import load_config, make_exclude_filter
 from .dates import fix_dates, scan_dates
 from .git_scan import (
@@ -20,7 +22,7 @@ from .output import format_json, format_text, supports_color
 from .source_scan import scan_config_files, scan_source_tree
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ai-trace-scan",
         description="Detect AI/agentic authorship fingerprints in a codebase.",
@@ -112,22 +114,23 @@ def main():
 
     args = parser.parse_args()
 
-    root = Path(args.path).resolve()
-    use_color = supports_color() and not args.no_color and args.output_format == "text"
+    root: Path = Path(args.path).resolve()
+    use_color: bool = supports_color() and not args.no_color and args.output_format == "text"
 
     if not root.is_dir():
         print(f"Error: {root} is not a directory", file=sys.stderr)
         sys.exit(2)
 
-    has_git = is_git_repo(root)
+    has_git: bool = is_git_repo(root)
 
-    # Fix dates mode — rewrite and exit
+    # Fix dates mode -- rewrite and exit
     if args.fix_dates:
         if not has_git:
             print("Error: --fix-dates requires a git repository", file=sys.stderr)
             sys.exit(2)
 
         # Determine rev range
+        rev_range: str
         if args.branch:
             default = get_default_branch(root)
             rev_range = f"{default}..{args.branch}" if default else args.branch
@@ -147,8 +150,8 @@ def main():
             rev_range = "HEAD"
         else:
             # Default: only unpushed commits
-            rev_range = get_unpushed_range(root)
-            if rev_range is None:
+            unpushed = get_unpushed_range(root)
+            if unpushed is None:
                 print(
                     "Error: No remote tracking branch found. Cannot determine unpushed commits.\n"
                     "  Use --branch <name> to target a specific branch, or\n"
@@ -156,7 +159,8 @@ def main():
                     file=sys.stderr,
                 )
                 sys.exit(2)
-        burst = None
+            rev_range = unpushed
+        burst: tuple[int, float] | None = None
         if args.burst:
             try:
                 parts = args.burst.split(",")
@@ -164,7 +168,7 @@ def main():
             except (ValueError, IndexError):
                 print("Error: --burst format is SESSIONS,GAP_DAYS (e.g. 3,2)", file=sys.stderr)
                 sys.exit(2)
-        ok = fix_dates(
+        ok: bool = fix_dates(
             root,
             rev_range,
             spread_hours=args.spread,
@@ -179,7 +183,7 @@ def main():
 
     # Normal scan mode
     config = load_config(root)
-    excludes = list(args.exclude)
+    excludes: list[str] = list(args.exclude)
     config_excludes = config.get("exclude", [])
     if isinstance(config_excludes, list):
         excludes.extend(config_excludes)
@@ -190,11 +194,11 @@ def main():
     if not args.quiet and args.output_format == "text":
         name = root.name
         if use_color:
-            print(f"\n  \033[1mai-trace-scan\033[0m — {name}")
+            print(f"\n  \033[1mai-trace-scan\033[0m -- {name}")
         else:
-            print(f"\n  ai-trace-scan — {name}")
+            print(f"\n  ai-trace-scan -- {name}")
 
-    findings = []
+    findings: list[Finding] = []
 
     if args.staged:
         if not has_git:
