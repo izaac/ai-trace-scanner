@@ -5,6 +5,34 @@ Detect AI/agentic authorship fingerprints in a codebase.
 Scans git history, branch names, config files, and source comments for
 traces left by AI coding assistants (Copilot, Claude, Cursor, Aider, etc).
 
+## Table of contents
+
+- [Setup](#setup)
+  - [Platform notes](#platform-notes)
+- [Usage](#usage)
+  - [Scan an entire repo](#scan-an-entire-repo)
+  - [Scan only your current branch](#scan-only-your-current-branch)
+  - [Scan staged changes before committing](#scan-staged-changes-before-committing)
+  - [Limit commit history depth](#limit-commit-history-depth)
+  - [Disable color](#disable-color-for-ci--piping)
+  - [Quiet mode](#quiet-mode-findings-only-no-banner)
+- [What it detects](#what-it-detects)
+- [Exit codes](#exit-codes)
+- [Pre-commit hook](#pre-commit-hook)
+- [Exclude patterns](#exclude-patterns)
+  - [Persistent excludes with config file](#persistent-excludes-with-config-file)
+- [JSON output](#json-output)
+- [Commit timing detection and fix](#commit-timing-detection-and-fix)
+  - [How it works](#how-it-works)
+  - [Usage](#usage-1)
+  - [Safety checks](#safety-checks)
+  - [Detection](#detection)
+- [Development](#development)
+  - [Running tests](#running-tests)
+  - [Linting and formatting](#linting-and-formatting)
+  - [Pre-commit hooks](#pre-commit-hooks)
+  - [Makefile targets](#makefile-targets)
+
 ## Setup
 
 One-time setup — installs `uv` (if needed) and creates the virtual environment:
@@ -15,34 +43,6 @@ make install
 
 After that, `uv run` handles everything automatically (venv activation,
 Python version, dependencies). You don't need `make` again.
-
-### Running tests
-
-```sh
-make test
-```
-
-Runs the full test suite (168 tests) via pytest.
-
-### Pre-commit hooks
-
-Activate hooks that run linters, formatters, AI trace scan, and tests
-on every commit:
-
-```sh
-make setup-hooks
-```
-
-Hooks (via [pre-commit](https://pre-commit.com)):
-
-| Hook          | What it does                              |
-| ------------- | ----------------------------------------- |
-| ruff          | Lint + auto-fix Python                    |
-| ruff-format   | Format Python (ruff's built-in formatter) |
-| black         | Format Python                             |
-| mdformat      | Format Markdown                           |
-| ai-trace-scan | Scan staged changes for AI traces         |
-| pytest        | Run unit tests                            |
 
 ### Platform notes
 
@@ -312,3 +312,89 @@ Commit timing analysis runs automatically during scans. Adjust sensitivity:
 # Flag clusters with less than 3-minute average gaps (stricter)
 ai-scan --cluster-threshold 3 /path/to/repo
 ```
+
+## Development
+
+### Running tests
+
+The test suite uses [pytest](https://docs.pytest.org/) and covers patterns,
+config loading, output formatting, source scanning, git operations, date
+rewriting, and the CLI entry point.
+
+```sh
+# Run the full suite (verbose)
+make test
+
+# Run the full suite (quiet, CI-friendly)
+uv run --extra test pytest tests/ -q
+
+# Run a single test file
+uv run --extra test pytest tests/test_dates.py -v
+
+# Run a specific test by name
+uv run --extra test pytest tests/test_dates.py -k "test_fix_dates_burst" -v
+
+# Run with coverage (if pytest-cov is installed)
+uv run --extra test pytest tests/ --cov=ai_trace_scan --cov-report=term-missing
+```
+
+Test files live in `tests/` and mirror the package structure:
+
+| Test file             | What it covers                                         |
+| --------------------- | ------------------------------------------------------ |
+| `test_patterns.py`    | Regex patterns for AI traces                           |
+| `test_config.py`      | `.ai-trace-scan.yml` loading and exclude filters       |
+| `test_output.py`      | Text and JSON output formatting                        |
+| `test_source_scan.py` | Pygments comment extraction, gitignore, file tree      |
+| `test_git_scan.py`    | Commit, branch, tag, and staged-change scanning        |
+| `test_dates.py`       | Clustering, scan_dates, fix_dates, safety, weekends    |
+| `test_cli.py`         | Argparse flags, exit codes, end-to-end CLI invocations |
+
+### Linting and formatting
+
+```sh
+# Check without modifying
+make lint
+
+# Auto-fix and reformat
+make format
+```
+
+`make lint` runs (in order):
+
+1. **ruff** — pycodestyle, pyflakes, isort, bugbear, simplify rules
+1. **black** — code formatting check (line length 100)
+1. **mypy** — strict type checking
+1. **mdformat** — Markdown formatting check (GFM + tables)
+
+### Pre-commit hooks
+
+Activate hooks that run linters, formatters, AI trace scan, and tests
+on every commit:
+
+```sh
+make setup-hooks
+```
+
+Hooks (via [pre-commit](https://pre-commit.com)):
+
+| Hook          | What it does                              |
+| ------------- | ----------------------------------------- |
+| ruff          | Lint + auto-fix Python                    |
+| ruff-format   | Format Python (ruff's built-in formatter) |
+| black         | Format Python                             |
+| mdformat      | Format Markdown                           |
+| ai-trace-scan | Scan staged changes for AI traces         |
+| pytest        | Run unit tests                            |
+
+### Makefile targets
+
+| Target        | Command               | Description                               |
+| ------------- | --------------------- | ----------------------------------------- |
+| `install`     | `make install`        | Install `uv` (if needed) and sync deps    |
+| `run`         | `make run ARGS="..."` | Run the scanner with arbitrary arguments  |
+| `test`        | `make test`           | Run the full pytest suite                 |
+| `lint`        | `make lint`           | Check ruff, black, mypy, mdformat         |
+| `format`      | `make format`         | Auto-fix ruff + reformat black + mdformat |
+| `setup-hooks` | `make setup-hooks`    | Install pre-commit git hooks              |
+| `clean`       | `make clean`          | Remove `.venv`                            |

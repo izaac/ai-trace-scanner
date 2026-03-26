@@ -75,6 +75,11 @@ def main() -> None:
         "--force", action="store_true", help="Skip safety checks (pushed commits, confirmation)"
     )
     date_group.add_argument(
+        "--sign",
+        action="store_true",
+        help="GPG/SSH sign all commits after rewriting timestamps",
+    )
+    date_group.add_argument(
         "--anchor",
         choices=["present", "first-commit"],
         default="present",
@@ -178,6 +183,7 @@ def main() -> None:
             force=args.force,
             anchor=args.anchor,
             no_weekends=args.no_weekends,
+            sign=args.sign,
         )
         sys.exit(0 if ok else 2)
 

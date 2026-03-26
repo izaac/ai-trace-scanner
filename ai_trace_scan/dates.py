@@ -259,6 +259,7 @@ def fix_dates(
     force: bool = False,
     anchor: str = "present",
     no_weekends: bool = False,
+    sign: bool = False,
 ) -> bool:
     """Rewrite commit timestamps to spread over a realistic time range.
 
@@ -275,6 +276,7 @@ def fix_dates(
                 backwards; "first-commit" keeps the first commit's date and
                 spreads forward (may produce future dates)
         no_weekends: if True, shift any Saturday/Sunday commits to Monday
+        sign: if True, GPG/SSH sign all commits after rewriting
     """
     out = _git("log", "--format=%H %aI %s", rev_range, cwd=cwd)
     if not out:
@@ -408,7 +410,46 @@ def fix_dates(
         print()
         return True
 
-    return _rewrite_dates(cwd, new_dates, count, spread_hours, burst, rev_range)
+    return _rewrite_dates(cwd, new_dates, count, spread_hours, burst, rev_range, sign=sign)
+
+
+def _sign_commits(cwd: str | Path) -> bool:
+    """Re-sign all commits via rebase after a history rewrite."""
+    # Temporarily uninstall pre-commit hooks if present
+    hook_path: Path = Path(cwd) / ".git" / "hooks" / "pre-commit"
+    hook_backup: Path = Path(cwd) / ".git" / "hooks" / "pre-commit.bak"
+    had_hook: bool = hook_path.exists()
+    if had_hook:
+        hook_path.rename(hook_backup)
+
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "rebase",
+                "--root",
+                "--exec",
+                "git commit --amend --no-edit -S",
+                "--committer-date-is-author-date",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"  Signing failed: {result.stderr}", file=sys.stderr)
+            # Abort if rebase is still in progress
+            subprocess.run(
+                ["git", "rebase", "--abort"],
+                capture_output=True,
+                cwd=cwd,
+            )
+            return False
+        return True
+    finally:
+        if had_hook and hook_backup.exists():
+            hook_backup.rename(hook_path)
 
 
 def _rewrite_dates(
@@ -418,6 +459,7 @@ def _rewrite_dates(
     spread_hours: float,
     burst: tuple[int, float] | None,
     rev_range: str,
+    sign: bool = False,
 ) -> bool:
     """Apply new dates via git filter-branch with safety net."""
 
@@ -473,7 +515,16 @@ def _rewrite_dates(
         cwd=cwd,
     )
 
-    # 6. Show results
+    # 6. Sign commits if requested
+    if sign:
+        print("  Signing all commits...", file=sys.stderr)
+        if not _sign_commits(cwd):
+            if backup_name:
+                print(f"  Restore with: git reset --hard {backup_name}", file=sys.stderr)
+            return False
+        print("  All commits signed.", file=sys.stderr)
+
+    # 7. Show results
     out = _git("log", "--format=%h  %aI  %s", cwd=cwd)
     if out:
         if burst:
