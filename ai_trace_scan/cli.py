@@ -14,6 +14,7 @@ from .git_scan import (
     get_unpushed_range,
     is_git_repo,
     scan_branches,
+    scan_commit_diffs,
     scan_commits,
     scan_staged,
     scan_tags,
@@ -220,6 +221,7 @@ def main() -> None:
                 rev_range = "HEAD"
 
             findings.extend(scan_commits(root, rev_range, args.commits, exclude_fn))
+            findings.extend(scan_commit_diffs(root, rev_range, args.commits, exclude_fn))
             findings.extend(scan_dates(root, rev_range, args.commits, args.cluster_threshold))
             findings.extend(scan_branches(root, exclude_fn))
             findings.extend(scan_tags(root, exclude_fn))

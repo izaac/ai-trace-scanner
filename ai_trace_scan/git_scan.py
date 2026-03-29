@@ -13,6 +13,7 @@ from .patterns import (
     BRANCH_PATTERNS,
     COMMENT_PATTERNS,
     COMMIT_MSG_PATTERNS,
+    DIFF_PATTERNS,
     TRAILER_PATTERNS,
 )
 
@@ -116,6 +117,72 @@ def scan_commits(
                         message=label,
                     )
                 )
+    return findings
+
+
+def scan_commit_diffs(
+    cwd: str | Path,
+    rev_range: str,
+    max_commits: int,
+    exclude_fn: Callable[[str], bool],
+) -> list[Finding]:
+    """Scan actual code diffs in commits for AI traces in added lines."""
+    findings: list[Finding] = []
+    out = git(
+        "log",
+        f"--max-count={max_commits}",
+        "-p",
+        "--diff-filter=AM",
+        rev_range,
+        cwd=cwd,
+    )
+    if not out:
+        return findings
+
+    all_patterns = COMMENT_PATTERNS + DIFF_PATTERNS
+    current_sha: str = ""
+    current_file: str | None = None
+    diff_line_no: int = 0
+
+    for line in out.split("\n"):
+        if line.startswith("commit "):
+            current_sha = line.split()[1][:12]
+            current_file = None
+            diff_line_no = 0
+        elif line.startswith("diff --git"):
+            current_file = None
+            diff_line_no = 0
+        elif line.startswith("+++ b/"):
+            current_file = line[6:]
+            diff_line_no = 0
+        elif line.startswith("@@ "):
+            # Parse hunk header for approximate line number
+            # Format: @@ -old,count +new,count @@
+            match = re.search(r"\+(\d+)", line)
+            diff_line_no = int(match.group(1)) if match else 0
+        elif line.startswith("+") and not line.startswith("+++"):
+            if current_file and exclude_fn(current_file):
+                diff_line_no += 1
+                continue
+            added = line[1:]
+            for pattern, label in all_patterns:
+                if re.search(pattern, added, re.IGNORECASE):
+                    loc = f"commit {current_sha}"
+                    if current_file:
+                        loc += f" ({current_file}:{diff_line_no})"
+                    findings.append(
+                        Finding(
+                            severity="medium",
+                            category="commit-diff",
+                            location=loc,
+                            message=label,
+                        )
+                    )
+            diff_line_no += 1
+        elif not line.startswith("-"):
+            # Context lines also advance the line counter
+            diff_line_no += 1
+
     return findings
 
 

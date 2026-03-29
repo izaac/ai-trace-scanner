@@ -68,6 +68,40 @@ AGENT_CONFIG_GLOBS: list[str] = [
     ".copilot/",
 ]
 
+DIFF_PATTERNS: list[tuple[str, str]] = [
+    (
+        r"\b(?:this (?:code|function|class|module) was (?:generated|written|created) (?:by|with|using) (?:ai|copilot|claude|gpt|chatgpt|cursor|aider|gemini))\b",
+        "AI authorship claim in code",
+    ),
+    (
+        r"\bTODO\s*:?\s*(?:copilot|claude|ai|gpt)\b",
+        "AI-referencing TODO comment",
+    ),
+    (
+        r"\b(?:as (?:an ai|a language model)|I (?:don't|cannot|can't) (?:actually|really))\b",
+        "AI instruction remnant in code",
+    ),
+]
+
+PROSE_PATTERNS: list[tuple[str, str]] = [
+    (
+        r"\b(?:written|authored|drafted|created) (?:by|with|using) (?:ai|copilot|claude|gpt|chatgpt|cursor|aider|gemini|anthropic|openai)\b",
+        "AI authorship attribution in prose",
+    ),
+    (
+        r"\bthis (?:document|page|guide|readme|file) (?:was |is )?(?:generated|created|written|produced) (?:by|with|using) (?:ai|copilot|claude|gpt|chatgpt|cursor|aider|gemini)\b",
+        "AI-generated document attribution",
+    ),
+    (
+        r"\b(?:powered by|built with|assisted by) (?:copilot|claude|gpt|chatgpt|cursor|aider|gemini|anthropic|openai)\b",
+        "AI tool attribution in prose",
+    ),
+    (
+        r"\bgenerated (?:by|with|using) (?:copilot|claude|gpt|chatgpt|ai|cursor|aider|gemini)\b",
+        "AI generation attribution in prose",
+    ),
+]
+
 COMMENT_PATTERNS: list[tuple[str, str]] = [
     (
         r"\bgenerated (?:by|with|using) (?:copilot|claude|gpt|chatgpt|ai|cursor|aider|gemini)\b",
