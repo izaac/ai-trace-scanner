@@ -1,6 +1,6 @@
 [project]
 name = "ai-trace-scan"
-version = "0.5.0"
+version = "0.6.0"
 description = "Detect AI/agentic authorship fingerprints in a codebase"
 requires-python = ">=3.10"
 readme = "README.md"
