@@ -90,6 +90,46 @@ class TestCliGit:
         assert result.returncode == 0
 
 
+class TestCliBranchSelfReference:
+    def test_branch_same_as_default_scans_all_commits(self, tmp_path):
+        """When --branch X and X is the default branch, scan all commits (not empty range)."""
+        _git_run("init", "-b", "main", cwd=tmp_path)
+        _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
+        _git_run("config", "user.name", "Test", cwd=tmp_path)
+        (tmp_path / "file.txt").write_text("init")
+        _git_run("add", ".", cwd=tmp_path)
+        _git_run(
+            "commit",
+            "-m",
+            "Initial commit\n\nCo-authored-by: Copilot <copilot@github.com>",
+            cwd=tmp_path,
+        )
+        result = _run_cli("--branch", "main", str(tmp_path))
+        assert result.returncode == 1
+        assert "Co-authored-by Copilot trailer" in result.stdout
+
+    def test_branch_different_from_default_uses_range(self, tmp_path):
+        """When --branch feature, scan main..feature (only feature commits)."""
+        _git_run("init", "-b", "main", cwd=tmp_path)
+        _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
+        _git_run("config", "user.name", "Test", cwd=tmp_path)
+        (tmp_path / "file.txt").write_text("init")
+        _git_run("add", ".", cwd=tmp_path)
+        # Copilot trailer on main — should NOT appear when scanning feature
+        _git_run(
+            "commit",
+            "-m",
+            "Main commit\n\nCo-authored-by: Copilot <copilot@github.com>",
+            cwd=tmp_path,
+        )
+        _git_run("checkout", "-b", "feature", cwd=tmp_path)
+        (tmp_path / "clean.txt").write_text("clean")
+        _git_run("add", ".", cwd=tmp_path)
+        _git_run("commit", "-m", "Clean feature commit", cwd=tmp_path)
+        result = _run_cli("--branch", "feature", str(tmp_path))
+        assert result.returncode == 0
+
+
 class TestCliBurst:
     def test_invalid_burst_format(self, tmp_path):
         _git_run("init", cwd=tmp_path)

@@ -139,7 +139,10 @@ def main() -> None:
         rev_range: str
         if args.branch:
             default = get_default_branch(root)
-            rev_range = f"{default}..{args.branch}" if default else args.branch
+            if default and args.branch != default:
+                rev_range = f"{default}..{args.branch}"
+            else:
+                rev_range = args.branch
         elif args.all_commits:
             print(
                 "  WARNING: --all-commits will rewrite the ENTIRE branch history.",
@@ -216,7 +219,10 @@ def main() -> None:
         if has_git:
             if args.branch:
                 default = get_default_branch(root)
-                rev_range = f"{default}..{args.branch}" if default else args.branch
+                if default and args.branch != default:
+                    rev_range = f"{default}..{args.branch}"
+                else:
+                    rev_range = args.branch
             else:
                 rev_range = "HEAD"
 
