@@ -13,7 +13,7 @@ from . import Finding
 
 def _git(*args: str, cwd: str | Path | None = None) -> str | None:
     r = subprocess.run(
-        ["git", "--no-pager", *list(args)],
+        ["git", "--no-pager", *args],
         capture_output=True,
         text=True,
         cwd=cwd,
@@ -158,7 +158,7 @@ def _detect_clustering(dates: list[datetime], threshold_minutes: float = 5) -> b
     if len(dates) < 2:
         return False
     total_span = (dates[-1] - dates[0]).total_seconds() / 60
-    avg_gap = total_span / (len(dates) - 1) if len(dates) > 1 else 0
+    avg_gap = total_span / (len(dates) - 1)
     return avg_gap < threshold_minutes
 
 

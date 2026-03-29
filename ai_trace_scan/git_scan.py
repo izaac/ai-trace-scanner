@@ -21,7 +21,7 @@ from .patterns import (
 def git(*args: str, cwd: str | Path | None = None) -> str | None:
     try:
         r = subprocess.run(
-            ["git", "--no-pager", *list(args)],
+            ["git", "--no-pager", *args],
             capture_output=True,
             text=True,
             cwd=cwd,
@@ -69,6 +69,21 @@ def get_unpushed_range(cwd: str | Path) -> str | None:
     return None
 
 
+def _match_any(
+    text: str,
+    patterns: list[tuple[str, str]],
+    severity: str,
+    category: str,
+    location: str,
+) -> list[Finding]:
+    """Match text against a list of (regex, label) patterns."""
+    return [
+        Finding(severity=severity, category=category, location=location, message=label)
+        for pattern, label in patterns
+        if re.search(pattern, text, re.IGNORECASE)
+    ]
+
+
 def scan_commits(
     cwd: str | Path,
     rev_range: str,
@@ -96,27 +111,20 @@ def scan_commits(
         if exclude_fn(f"commit {sha}"):
             continue
 
+        loc = f"commit {sha} ({subject})"
         for pattern, label in BOT_AUTHOR_PATTERNS:
             if re.search(pattern, author_email, re.IGNORECASE):
                 findings.append(
                     Finding(
                         severity="high",
                         category="git-history",
-                        location=f"commit {sha} ({subject})",
+                        location=loc,
                         message=f"{label}: {author_email}",
                     )
                 )
-
-        for pattern, label in TRAILER_PATTERNS + COMMIT_MSG_PATTERNS:
-            if re.search(pattern, body, re.IGNORECASE):
-                findings.append(
-                    Finding(
-                        severity="high",
-                        category="git-history",
-                        location=f"commit {sha} ({subject})",
-                        message=label,
-                    )
-                )
+        findings.extend(
+            _match_any(body, TRAILER_PATTERNS + COMMIT_MSG_PATTERNS, "high", "git-history", loc)
+        )
     return findings
 
 
@@ -165,19 +173,10 @@ def scan_commit_diffs(
                 diff_line_no += 1
                 continue
             added = line[1:]
-            for pattern, label in all_patterns:
-                if re.search(pattern, added, re.IGNORECASE):
-                    loc = f"commit {current_sha}"
-                    if current_file:
-                        loc += f" ({current_file}:{diff_line_no})"
-                    findings.append(
-                        Finding(
-                            severity="medium",
-                            category="commit-diff",
-                            location=loc,
-                            message=label,
-                        )
-                    )
+            loc = f"commit {current_sha}"
+            if current_file:
+                loc += f" ({current_file}:{diff_line_no})"
+            findings.extend(_match_any(added, all_patterns, "medium", "commit-diff", loc))
             diff_line_no += 1
         elif not line.startswith("-"):
             # Context lines also advance the line counter
@@ -199,16 +198,9 @@ def scan_tags(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Findin
         msg = git("tag", "-l", "--format=%(contents)", tag, cwd=cwd)
         if not msg:
             continue
-        for pattern, label in TRAILER_PATTERNS + COMMIT_MSG_PATTERNS:
-            if re.search(pattern, msg, re.IGNORECASE):
-                findings.append(
-                    Finding(
-                        severity="high",
-                        category="git-tag",
-                        location=f"tag {tag}",
-                        message=label,
-                    )
-                )
+        findings.extend(
+            _match_any(msg, TRAILER_PATTERNS + COMMIT_MSG_PATTERNS, "high", "git-tag", f"tag {tag}")
+        )
     return findings
 
 
@@ -254,14 +246,13 @@ def scan_staged(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Find
             if current_file and exclude_fn(current_file):
                 continue
             added = line[1:]
+            loc = current_file or "(unknown file)"
             for pattern, label in TRAILER_PATTERNS + COMMENT_PATTERNS:
                 if re.search(pattern, added, re.IGNORECASE):
+                    severity = "high" if "trailer" in label.lower() else "medium"
                     findings.append(
                         Finding(
-                            severity="high" if "trailer" in label.lower() else "medium",
-                            category="staged-change",
-                            location=current_file or "(unknown file)",
-                            message=label,
+                            severity=severity, category="staged-change", location=loc, message=label
                         )
                     )
     return findings

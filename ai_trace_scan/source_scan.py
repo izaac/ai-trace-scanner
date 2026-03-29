@@ -10,7 +10,6 @@ from pathlib import Path
 import pathspec
 from pygments import lexers
 from pygments.lexer import Lexer
-from pygments.token import Token
 
 from . import Finding
 from .patterns import (
@@ -91,59 +90,41 @@ def _extract_comments(filepath: Path) -> Generator[tuple[int, str], None, None]:
         line_start = lineno
         lineno += value.count("\n")
 
-        if (
-            ttype in Token.Comment  # type: ignore[comparison-overlap]
-            or ttype in Token.Comment.Single  # type: ignore[comparison-overlap]
-            or ttype in Token.Comment.Multiline  # type: ignore[comparison-overlap]
-            or ttype in Token.Comment.Special  # type: ignore[comparison-overlap]
-            or ttype is Token.Comment.Hashbang
-            or str(ttype).startswith("Token.Comment")
-        ):
+        if str(ttype).startswith("Token.Comment"):
             yield line_start, value
+
+
+def _match_patterns(
+    line: str,
+    patterns: list[tuple[str, str]],
+    category: str,
+    location: str,
+) -> list[Finding]:
+    """Check a line against a list of regex patterns, returning any matches."""
+    return [
+        Finding(severity="medium", category=category, location=location, message=label)
+        for pattern, label in patterns
+        if re.search(pattern, line, re.IGNORECASE)
+    ]
 
 
 def _scan_file(filepath: Path, root: Path) -> list[Finding]:
     findings: list[Finding] = []
-    rel = filepath.relative_to(root)
+    rel = str(filepath.relative_to(root))
 
     if _is_plain_text(filepath):
         try:
             with open(filepath, encoding="utf-8", errors="ignore") as f:
                 for lineno, line in enumerate(f, 1):
-                    for pattern, label in COMMENT_PATTERNS:
-                        if re.search(pattern, line, re.IGNORECASE):
-                            findings.append(
-                                Finding(
-                                    severity="medium",
-                                    category="source-comment",
-                                    location=f"{rel}:{lineno}",
-                                    message=label,
-                                )
-                            )
-                    for pattern, label in PROSE_PATTERNS:
-                        if re.search(pattern, line, re.IGNORECASE):
-                            findings.append(
-                                Finding(
-                                    severity="medium",
-                                    category="prose-content",
-                                    location=f"{rel}:{lineno}",
-                                    message=label,
-                                )
-                            )
+                    loc = f"{rel}:{lineno}"
+                    findings.extend(_match_patterns(line, COMMENT_PATTERNS, "source-comment", loc))
+                    findings.extend(_match_patterns(line, PROSE_PATTERNS, "prose-content", loc))
         except OSError:
             pass
     elif _get_lexer(filepath):
         for lineno, comment_text in _extract_comments(filepath):
-            for pattern, label in COMMENT_PATTERNS:
-                if re.search(pattern, comment_text, re.IGNORECASE):
-                    findings.append(
-                        Finding(
-                            severity="medium",
-                            category="source-comment",
-                            location=f"{rel}:{lineno}",
-                            message=label,
-                        )
-                    )
+            loc = f"{rel}:{lineno}"
+            findings.extend(_match_patterns(comment_text, COMMENT_PATTERNS, "source-comment", loc))
 
     return findings
 
@@ -212,16 +193,9 @@ def scan_workflows(root: Path, exclude_fn: Callable[[str], bool]) -> list[Findin
         try:
             with open(filepath, encoding="utf-8", errors="ignore") as f:
                 for lineno, line in enumerate(f, 1):
-                    for pattern, label in WORKFLOW_PATTERNS:
-                        if re.search(pattern, line, re.IGNORECASE):
-                            findings.append(
-                                Finding(
-                                    severity="medium",
-                                    category="workflow",
-                                    location=f"{rel_str}:{lineno}",
-                                    message=label,
-                                )
-                            )
+                    findings.extend(
+                        _match_patterns(line, WORKFLOW_PATTERNS, "workflow", f"{rel_str}:{lineno}")
+                    )
         except OSError:
             pass
 
