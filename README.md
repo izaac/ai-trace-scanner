@@ -13,6 +13,7 @@ traces left by AI coding assistants (Copilot, Claude, Cursor, Aider, etc).
   - [Scan an entire repo](#scan-an-entire-repo)
   - [Scan only your current branch](#scan-only-your-current-branch)
   - [Scan staged changes before committing](#scan-staged-changes-before-committing)
+  - [Scan unstaged work-in-progress](#scan-unstaged-work-in-progress)
   - [Limit commit history depth](#limit-commit-history-depth)
   - [Disable color](#disable-color-for-ci--piping)
   - [Quiet mode](#quiet-mode-findings-only-no-banner)
@@ -66,7 +67,7 @@ Once installed, run from anywhere using `uv run --project`:
 
 ```sh
 # Shorthand — add to .bashrc / .zshrc
-alias ai-scan='uv run --project ~/Documents/ai-trace-scanner ai-trace-scan'
+alias ai-scan='uv run --project /path/to/ai-trace-scanner ai-trace-scan'
 ```
 
 ### Scan an entire repo
@@ -98,6 +99,20 @@ ai-scan --staged
 
 Only checks the diff of what you're about to commit. Useful as a
 pre-commit hook (see below).
+
+### Scan unstaged work-in-progress
+
+```sh
+cd /path/to/repo
+ai-scan --unstaged
+```
+
+Scans your working tree changes before you even stage them. Use both
+together to check everything pending:
+
+```sh
+ai-scan --staged --unstaged
+```
 
 ### Limit commit history depth
 
@@ -162,7 +177,7 @@ Or as a git hook directly in `.git/hooks/pre-commit`:
 
 ```sh
 #!/bin/sh
-uv run --project ~/Documents/ai-trace-scanner ai-trace-scan --staged
+uv run --project /path/to/ai-trace-scanner ai-trace-scan --staged
 ```
 
 ## Exclude patterns
