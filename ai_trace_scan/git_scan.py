@@ -232,9 +232,15 @@ def scan_branches(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Fi
     return findings
 
 
-def scan_staged(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+def _scan_diff(
+    cwd: str | Path,
+    diff_args: list[str],
+    category: str,
+    exclude_fn: Callable[[str], bool],
+) -> list[Finding]:
+    """Scan a git diff for AI traces in added lines."""
     findings: list[Finding] = []
-    out = git("diff", "--cached", "--unified=0", cwd=cwd)
+    out = git("diff", *diff_args, cwd=cwd)
     if not out:
         return findings
 
@@ -251,8 +257,14 @@ def scan_staged(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Find
                 if re.search(pattern, added, re.IGNORECASE):
                     severity = "high" if "trailer" in label.lower() else "medium"
                     findings.append(
-                        Finding(
-                            severity=severity, category="staged-change", location=loc, message=label
-                        )
+                        Finding(severity=severity, category=category, location=loc, message=label)
                     )
     return findings
+
+
+def scan_staged(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    return _scan_diff(cwd, ["--cached", "--unified=0"], "staged-change", exclude_fn)
+
+
+def scan_unstaged(cwd: str | Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    return _scan_diff(cwd, ["--unified=0"], "unstaged-change", exclude_fn)

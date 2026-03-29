@@ -18,6 +18,7 @@ from .git_scan import (
     scan_commits,
     scan_staged,
     scan_tags,
+    scan_unstaged,
 )
 from .output import format_json, format_text, supports_color
 from .source_scan import scan_config_files, scan_source_tree, scan_workflows
@@ -33,6 +34,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--staged", action="store_true", help="Scan only staged changes (pre-commit hook mode)"
+    )
+    parser.add_argument(
+        "--unstaged", action="store_true", help="Scan unstaged working tree changes"
     )
     parser.add_argument("--branch", metavar="REF", help="Scan commits in REF not in main/master")
     parser.add_argument(
@@ -210,11 +214,14 @@ def main() -> None:
 
     findings: list[Finding] = []
 
-    if args.staged:
+    if args.staged or args.unstaged:
         if not has_git:
-            print("Error: --staged requires a git repository", file=sys.stderr)
+            print("Error: --staged/--unstaged requires a git repository", file=sys.stderr)
             sys.exit(2)
-        findings.extend(scan_staged(root, exclude_fn))
+        if args.staged:
+            findings.extend(scan_staged(root, exclude_fn))
+        if args.unstaged:
+            findings.extend(scan_unstaged(root, exclude_fn))
     else:
         if has_git:
             if args.branch:
