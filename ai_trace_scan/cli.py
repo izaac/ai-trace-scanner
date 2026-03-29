@@ -20,7 +20,7 @@ from .git_scan import (
     scan_tags,
 )
 from .output import format_json, format_text, supports_color
-from .source_scan import scan_config_files, scan_source_tree
+from .source_scan import scan_config_files, scan_source_tree, scan_workflows
 
 
 def main() -> None:
@@ -228,6 +228,7 @@ def main() -> None:
 
         findings.extend(scan_config_files(root, exclude_fn))
         findings.extend(scan_source_tree(root, exclude_fn))
+        findings.extend(scan_workflows(root, exclude_fn))
 
     if args.output_format == "json":
         print(format_json(findings))

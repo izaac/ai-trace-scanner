@@ -102,6 +102,29 @@ PROSE_PATTERNS: list[tuple[str, str]] = [
     ),
 ]
 
+WORKFLOW_PATTERNS: list[tuple[str, str]] = [
+    (
+        r"\buses:\s*.*(?:copilot|claude|anthropic|openai|aider|cursor|codeium|tabnine|gemini).*",
+        "AI tool action in workflow",
+    ),
+    (
+        r"\b(?:copilot|claude|aider|cursor|codeium)\b.*(?:review|suggest|generate|fix|pr-agent)",
+        "AI tool invocation in workflow",
+    ),
+    (
+        r"\bOPENAI_API_KEY\b|\bANTHROPIC_API_KEY\b|\bCLAUDE_API_KEY\b",
+        "AI service API key reference in workflow",
+    ),
+    (
+        r"\bnpx\s+@anthropic|\bpip\s+install\s+(?:anthropic|openai|aider-chat)\b",
+        "AI SDK installation in workflow",
+    ),
+    (
+        r"\buses:\s*.*(?:pr-agent|codeball|coderabbit|sourcery|sweep)\b",
+        "AI code review action in workflow",
+    ),
+]
+
 COMMENT_PATTERNS: list[tuple[str, str]] = [
     (
         r"\bgenerated (?:by|with|using) (?:copilot|claude|gpt|chatgpt|ai|cursor|aider|gemini)\b",

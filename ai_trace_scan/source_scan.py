@@ -13,7 +13,13 @@ from pygments.lexer import Lexer
 from pygments.token import Token
 
 from . import Finding
-from .patterns import AGENT_CONFIG_FILES, AGENT_CONFIG_GLOBS, COMMENT_PATTERNS
+from .patterns import (
+    AGENT_CONFIG_FILES,
+    AGENT_CONFIG_GLOBS,
+    COMMENT_PATTERNS,
+    PROSE_PATTERNS,
+    WORKFLOW_PATTERNS,
+)
 
 TEXT_EXTENSIONS: set[str] = {".md", ".rst", ".txt", ".adoc"}
 
@@ -99,21 +105,8 @@ def _extract_comments(filepath: Path) -> Generator[tuple[int, str], None, None]:
 def _scan_file(filepath: Path, root: Path) -> list[Finding]:
     findings: list[Finding] = []
     rel = filepath.relative_to(root)
-    lexer = _get_lexer(filepath)
 
-    if lexer:
-        for lineno, comment_text in _extract_comments(filepath):
-            for pattern, label in COMMENT_PATTERNS:
-                if re.search(pattern, comment_text, re.IGNORECASE):
-                    findings.append(
-                        Finding(
-                            severity="medium",
-                            category="source-comment",
-                            location=f"{rel}:{lineno}",
-                            message=label,
-                        )
-                    )
-    elif _is_plain_text(filepath):
+    if _is_plain_text(filepath):
         try:
             with open(filepath, encoding="utf-8", errors="ignore") as f:
                 for lineno, line in enumerate(f, 1):
@@ -127,8 +120,30 @@ def _scan_file(filepath: Path, root: Path) -> list[Finding]:
                                     message=label,
                                 )
                             )
+                    for pattern, label in PROSE_PATTERNS:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            findings.append(
+                                Finding(
+                                    severity="medium",
+                                    category="prose-content",
+                                    location=f"{rel}:{lineno}",
+                                    message=label,
+                                )
+                            )
         except OSError:
             pass
+    elif _get_lexer(filepath):
+        for lineno, comment_text in _extract_comments(filepath):
+            for pattern, label in COMMENT_PATTERNS:
+                if re.search(pattern, comment_text, re.IGNORECASE):
+                    findings.append(
+                        Finding(
+                            severity="medium",
+                            category="source-comment",
+                            location=f"{rel}:{lineno}",
+                            message=label,
+                        )
+                    )
 
     return findings
 
@@ -172,6 +187,44 @@ def scan_config_files(root: Path, exclude_fn: Callable[[str], bool]) -> list[Fin
                         message="AI assistant config file/directory present",
                     )
                 )
+    return findings
+
+
+def scan_workflows(root: Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
+    """Scan .github/workflows/ YAML files for AI tool invocations."""
+    findings: list[Finding] = []
+    workflows_dir = root / ".github" / "workflows"
+    if not workflows_dir.is_dir():
+        return findings
+
+    ignore_spec = _load_gitignore(root)
+
+    for filepath in sorted(workflows_dir.iterdir()):
+        if filepath.suffix.lower() not in (".yml", ".yaml"):
+            continue
+
+        rel_str = str(filepath.relative_to(root))
+        if ignore_spec and ignore_spec.match_file(rel_str):
+            continue
+        if exclude_fn(rel_str):
+            continue
+
+        try:
+            with open(filepath, encoding="utf-8", errors="ignore") as f:
+                for lineno, line in enumerate(f, 1):
+                    for pattern, label in WORKFLOW_PATTERNS:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            findings.append(
+                                Finding(
+                                    severity="medium",
+                                    category="workflow",
+                                    location=f"{rel_str}:{lineno}",
+                                    message=label,
+                                )
+                            )
+        except OSError:
+            pass
+
     return findings
 
 
