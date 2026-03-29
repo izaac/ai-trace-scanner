@@ -1,0 +1,7 @@
+- id: ai-trace-scan
+  name: AI trace scanner
+  entry: ai-trace-scan --staged --quiet
+  language: python
+  always_run: true
+  pass_filenames: false
+  stages: [pre-commit]
