@@ -27,6 +27,28 @@ COMMIT_MSG_PATTERNS: list[tuple[str, str]] = [
         r"^[\U0001f300-\U0001faff\u2600-\u27bf\u2b50]",
         "Emoji prefix in commit subject (common AI convention)",
     ),
+    # AI-to-user conversational patterns (second person)
+    (
+        r"\b(?:as you requested|you asked (?:for|me to)|per your request|as you (?:mentioned|suggested|wanted))\b",
+        "AI-to-user language in commit message",
+    ),
+    (
+        r"\b(?:based on your (?:feedback|request|instructions|requirements))\b",
+        "AI-to-user reference in commit message",
+    ),
+    (
+        r"\blet me know if you(?:'d| would) like\b",
+        "AI-to-user conversational phrase in commit message",
+    ),
+    # AI self-referencing first person
+    (
+        r"\bI(?:'ve| have) (?:implemented|added|refactored|updated|created|fixed|removed|replaced|modified|restructured|reorganized)\b",
+        "AI first-person voice in commit message",
+    ),
+    (
+        r"\b(?:here(?:'s| is) (?:the|what|my)|I(?:'ll| will) (?:create|update|add|fix|refactor|implement))\b",
+        "AI first-person voice in commit message",
+    ),
 ]
 
 BOT_AUTHOR_PATTERNS: list[tuple[str, str]] = [
@@ -80,6 +102,19 @@ DIFF_PATTERNS: list[tuple[str, str]] = [
     (
         r"\b(?:as (?:an ai|a language model)|I (?:don't|cannot|can't) (?:actually|really))\b",
         "AI instruction remnant in code",
+    ),
+    # AI-to-user conversational patterns left in code
+    (
+        r"\b(?:as you requested|you asked (?:for|me to)|per your request|per your instructions)\b",
+        "AI-to-user language in code",
+    ),
+    (
+        r"\blet me know if you(?:'d| would) like\b",
+        "AI-to-user conversational phrase in code",
+    ),
+    (
+        r"\bI(?:'ve| have) (?:implemented|added|refactored|updated|created|fixed) (?:this|the|a)\b",
+        "AI first-person voice in code",
     ),
 ]
 
@@ -136,4 +171,17 @@ COMMENT_PATTERNS: list[tuple[str, str]] = [
         "AI tool attribution in comment",
     ),
     (r"@generated\s+by\s+(?:ai|copilot|claude)", "Generated-by annotation"),
+    # AI-to-user conversational patterns in comments
+    (
+        r"\b(?:as you requested|you asked (?:for|me to)|per your (?:request|instructions))\b",
+        "AI-to-user language in comment",
+    ),
+    (
+        r"\blet me know if you(?:'d| would) like\b",
+        "AI-to-user conversational phrase in comment",
+    ),
+    (
+        r"\bI(?:'ve| have) (?:implemented|added|refactored|updated|created|fixed) (?:this|the|a)\b",
+        "AI first-person voice in comment",
+    ),
 ]
