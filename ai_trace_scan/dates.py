@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 import subprocess
 import sys
@@ -486,11 +487,15 @@ def _rewrite_dates(
     case_block: str = "\n".join(cases)
     env_filter: str = f'case "$GIT_COMMIT" in\n{case_block}\nesac'
 
+    env = os.environ.copy()
+    env["FILTER_BRANCH_SQUELCH_WARNING"] = "1"
+
     result = subprocess.run(
         ["git", "filter-branch", "-f", "--env-filter", env_filter, "--", "--all"],
         capture_output=True,
         text=True,
         cwd=cwd,
+        env=env,
         timeout=120,
     )
 
