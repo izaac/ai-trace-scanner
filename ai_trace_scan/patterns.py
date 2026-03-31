@@ -49,6 +49,30 @@ COMMIT_MSG_PATTERNS: list[tuple[str, str]] = [
         r"\b(?:here(?:'s| is) (?:the|what|my)|I(?:'ll| will) (?:create|update|add|fix|refactor|implement))\b",
         "AI first-person voice in commit message",
     ),
+    # AI apologies and corrections
+    (
+        r"\b(?:I apologize for the (?:oversight|confusion|error)|sorry for the (?:confusion|mistake)|you are correct,? I(?: will|'ll) (?:update|fix))\b",
+        "AI apology/correction language in commit message",
+    ),
+    # AI enthusiastic affirmations
+    (
+        r"^(?:Certainly!?|Of course,?|Sure thing!?|Yes, I can help(?: with that)?!?)\s",
+        "AI conversational affirmation in commit message",
+    ),
+    # AI code introductions / explanations
+    (
+        r"\b(?:here(?:'s| is) the (?:updated |complete )?(?:code|implementation|script)|below is the (?:updated )?(?:code|implementation|script))\b",
+        "AI code block introduction in commit message",
+    ),
+    (
+        r"\b(?:let(?:'s| us) break this down|here is a step-by-step)\b",
+        "AI conversational explanation in commit message",
+    ),
+    # AI sign-offs / pleasantries
+    (
+        r"\b(?:hope this helps!?|happy coding!?|let me know if you have any (?:other|more) questions)\b",
+        "AI conversational sign-off in commit message",
+    ),
 ]
 
 BOT_AUTHOR_PATTERNS: list[tuple[str, str]] = [
@@ -115,6 +139,25 @@ DIFF_PATTERNS: list[tuple[str, str]] = [
     (
         r"\bI(?:'ve| have) (?:implemented|added|refactored|updated|created|fixed) (?:this|the|a)\b",
         "AI first-person voice in code",
+    ),
+    # AI apologies and corrections
+    (
+        r"\b(?:I apologize for the (?:oversight|confusion|error)|sorry for the (?:confusion|mistake)|you are correct,? I(?: will|'ll) (?:update|fix))\b",
+        "AI apology/correction language in code",
+    ),
+    # AI code introductions / explanations
+    (
+        r"\b(?:here(?:'s| is) the (?:updated |complete )?(?:code|implementation|script)|below is the (?:updated )?(?:code|implementation|script))\b",
+        "AI code block introduction in code",
+    ),
+    (
+        r"\b(?:let(?:'s| us) break this down|here is a step-by-step)\b",
+        "AI conversational explanation in code",
+    ),
+    # AI sign-offs / pleasantries
+    (
+        r"\b(?:hope this helps!?|happy coding!?|let me know if you have any (?:other|more) questions)\b",
+        "AI conversational sign-off in code",
     ),
 ]
 
@@ -183,5 +226,24 @@ COMMENT_PATTERNS: list[tuple[str, str]] = [
     (
         r"\bI(?:'ve| have) (?:implemented|added|refactored|updated|created|fixed) (?:this|the|a)\b",
         "AI first-person voice in comment",
+    ),
+    # AI apologies and corrections
+    (
+        r"\b(?:I apologize for the (?:oversight|confusion|error)|sorry for the (?:confusion|mistake)|you are correct,? I(?: will|'ll) (?:update|fix))\b",
+        "AI apology/correction language in comment",
+    ),
+    # AI code introductions / explanations
+    (
+        r"\b(?:here(?:'s| is) the (?:updated |complete )?(?:code|implementation|script)|below is the (?:updated )?(?:code|implementation|script))\b",
+        "AI code block introduction in comment",
+    ),
+    (
+        r"\b(?:let(?:'s| us) break this down|here is a step-by-step)\b",
+        "AI conversational explanation in comment",
+    ),
+    # AI sign-offs / pleasantries
+    (
+        r"\b(?:hope this helps!?|happy coding!?|let me know if you have any (?:other|more) questions)\b",
+        "AI conversational sign-off in comment",
     ),
 ]
