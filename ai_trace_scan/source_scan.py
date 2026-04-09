@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-import re
+import subprocess
 from collections.abc import Callable, Generator
 from pathlib import Path
 
@@ -18,6 +18,7 @@ from .patterns import (
     COMMENT_PATTERNS,
     PROSE_PATTERNS,
     WORKFLOW_PATTERNS,
+    CompiledPatterns,
 )
 
 TEXT_EXTENSIONS: set[str] = {".md", ".rst", ".txt", ".adoc"}
@@ -57,6 +58,9 @@ SKIP_DIRS: set[str] = {
 
 SELF_DIR: Path = Path(__file__).resolve().parent
 
+# Skip files larger than 1 MB to avoid OOM on generated/minified files
+_MAX_FILE_SIZE: int = 1_048_576
+
 
 def _is_plain_text(path: Path) -> bool:
     if path.name in TEXT_FILENAMES:
@@ -75,13 +79,18 @@ def _get_lexer(filepath: Path) -> Lexer | None:
         return None
 
 
-def _extract_comments(filepath: Path) -> Generator[tuple[int, str], None, None]:
+def _extract_comments(
+    filepath: Path, lexer: Lexer | None = None
+) -> Generator[tuple[int, str], None, None]:
     try:
+        if filepath.stat().st_size > _MAX_FILE_SIZE:
+            return
         source = filepath.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return
 
-    lexer = _get_lexer(filepath)
+    if lexer is None:
+        lexer = _get_lexer(filepath)
     if not lexer:
         return
 
@@ -96,24 +105,26 @@ def _extract_comments(filepath: Path) -> Generator[tuple[int, str], None, None]:
 
 def _match_patterns(
     line: str,
-    patterns: list[tuple[str, str]],
+    patterns: CompiledPatterns,
     category: str,
     location: str,
 ) -> list[Finding]:
-    """Check a line against a list of regex patterns, returning any matches."""
+    """Check a line against a list of compiled regex patterns, returning any matches."""
     return [
         Finding(severity="medium", category=category, location=location, message=label)
         for pattern, label in patterns
-        if re.search(pattern, line, re.IGNORECASE)
+        if pattern.search(line)
     ]
 
 
-def _scan_file(filepath: Path, root: Path) -> list[Finding]:
+def _scan_file(filepath: Path, root: Path, lexer: Lexer | None = None) -> list[Finding]:
     findings: list[Finding] = []
     rel = str(filepath.relative_to(root))
 
     if _is_plain_text(filepath):
         try:
+            if filepath.stat().st_size > _MAX_FILE_SIZE:
+                return findings
             with open(filepath, encoding="utf-8", errors="ignore") as f:
                 for lineno, line in enumerate(f, 1):
                     loc = f"{rel}:{lineno}"
@@ -121,12 +132,33 @@ def _scan_file(filepath: Path, root: Path) -> list[Finding]:
                     findings.extend(_match_patterns(line, PROSE_PATTERNS, "prose-content", loc))
         except OSError:
             pass
-    elif _get_lexer(filepath):
-        for lineno, comment_text in _extract_comments(filepath):
+    elif lexer is not None or _get_lexer(filepath):
+        for lineno, comment_text in _extract_comments(filepath, lexer):
             loc = f"{rel}:{lineno}"
             findings.extend(_match_patterns(comment_text, COMMENT_PATTERNS, "source-comment", loc))
 
     return findings
+
+
+def _git_visible_files(root: Path) -> set[str] | None:
+    """Return files visible to git (tracked + untracked-not-ignored).
+
+    Returns *None* if *root* is not inside a git repository so the caller
+    can fall back to the root-only ``.gitignore`` heuristic.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        return set(result.stdout.splitlines())
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 
 def _load_gitignore(root: Path) -> pathspec.PathSpec | None:
@@ -178,14 +210,18 @@ def scan_workflows(root: Path, exclude_fn: Callable[[str], bool]) -> list[Findin
     if not workflows_dir.is_dir():
         return findings
 
-    ignore_spec = _load_gitignore(root)
+    git_files = _git_visible_files(root)
+    ignore_spec = _load_gitignore(root) if git_files is None else None
 
-    for filepath in sorted(workflows_dir.iterdir()):
+    for filepath in sorted(workflows_dir.rglob("*.y*ml")):
         if filepath.suffix.lower() not in (".yml", ".yaml"):
             continue
 
         rel_str = str(filepath.relative_to(root))
-        if ignore_spec and ignore_spec.match_file(rel_str):
+        if git_files is not None:
+            if rel_str not in git_files:
+                continue
+        elif ignore_spec and ignore_spec.match_file(rel_str):
             continue
         if exclude_fn(rel_str):
             continue
@@ -205,7 +241,8 @@ def scan_workflows(root: Path, exclude_fn: Callable[[str], bool]) -> list[Findin
 def scan_source_tree(root: Path, exclude_fn: Callable[[str], bool]) -> list[Finding]:
     findings: list[Finding] = []
     skip_self: bool = root == SELF_DIR or SELF_DIR.is_relative_to(root)
-    ignore_spec = _load_gitignore(root)
+    git_files = _git_visible_files(root)
+    ignore_spec = _load_gitignore(root) if git_files is None else None
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
@@ -215,12 +252,16 @@ def scan_source_tree(root: Path, exclude_fn: Callable[[str], bool]) -> list[Find
                 continue
 
             rel_str = str(filepath.relative_to(root))
-            if ignore_spec and ignore_spec.match_file(rel_str):
+            if git_files is not None:
+                if rel_str not in git_files:
+                    continue
+            elif ignore_spec and ignore_spec.match_file(rel_str):
                 continue
             if exclude_fn(rel_str):
                 continue
 
-            if _get_lexer(filepath) or _is_plain_text(filepath):
-                findings.extend(_scan_file(filepath, root))
+            lexer = _get_lexer(filepath)
+            if lexer or _is_plain_text(filepath):
+                findings.extend(_scan_file(filepath, root, lexer))
 
     return findings

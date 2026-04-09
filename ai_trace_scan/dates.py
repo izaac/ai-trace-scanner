@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import random
+import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -11,16 +13,14 @@ from pathlib import Path
 
 from . import Finding
 
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+
 
 def _git(*args: str, cwd: str | Path | None = None) -> str | None:
-    r = subprocess.run(
-        ["git", "--no-pager", *args],
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-        timeout=30,
-    )
-    return r.stdout if r.returncode == 0 else None
+    from .git_scan import git
+
+    return git(*args, cwd=cwd)
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +40,10 @@ def _check_clean_worktree(cwd: str | Path) -> str | None:
 
 def _check_no_operation_in_progress(cwd: str | Path) -> str | None:
     """Ensure no rebase, merge, or cherry-pick is in progress."""
-    git_dir = Path(cwd) / ".git"
+    git_dir_out = _git("rev-parse", "--git-dir", cwd=cwd)
+    if not git_dir_out:
+        return "Unable to determine .git directory"
+    git_dir = Path(cwd) / git_dir_out.strip()
     for marker in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD"):
         if (git_dir / marker).exists():
             return f"A {marker.replace('_', ' ').lower()} operation is in progress -- finish or abort it first"
@@ -76,8 +79,11 @@ def _create_backup_branch(cwd: str | Path) -> str | None:
 
 
 def _collect_tree_shas(cwd: str | Path, rev_range: str) -> dict[str, str]:
-    """Collect {commit_sha: tree_sha} for verification after rewrite."""
-    out = _git("log", "--format=%H %T", rev_range, cwd=cwd)
+    """Collect {commit_sha: tree_sha} for verification after rewrite.
+
+    Returns commits in oldest-first order for positional comparison.
+    """
+    out = _git("log", "--format=%H %T", "--reverse", rev_range, cwd=cwd)
     if not out:
         return {}
     trees: dict[str, str] = {}
@@ -92,27 +98,32 @@ def _collect_tree_shas(cwd: str | Path, rev_range: str) -> dict[str, str]:
 def _verify_trees_preserved(
     cwd: str | Path,
     original_trees: dict[str, str],
-    new_shas: list[str],
+    rev_range: str,
 ) -> str | None:
     """Verify that all tree objects are unchanged after rewrite.
 
     Tree SHAs represent the actual file content of a commit. If dates
     changed but trees are identical, content was preserved.
+
+    Compares trees positionally (oldest-first) rather than as sorted
+    sets, so reordering would be caught.
     """
-    new_out = _git("log", "--format=%H %T", "HEAD", cwd=cwd)
+    new_out = _git("log", "--format=%T", "--reverse", rev_range, cwd=cwd)
     if not new_out:
         return "Unable to read post-rewrite commits"
 
-    new_trees: list[str] = []
-    for line in new_out.strip().split("\n"):
-        if not line.strip():
-            continue
-        _, tree_sha = line.split(" ", 1)
-        new_trees.append(tree_sha)
+    new_trees: list[str] = [t for t in new_out.strip().split("\n") if t.strip()]
 
+    # original_trees is insertion-ordered (oldest-first from _collect_tree_shas)
     old_trees = list(original_trees.values())
 
-    if sorted(new_trees[: len(old_trees)]) != sorted(old_trees):
+    if len(new_trees) < len(old_trees):
+        return (
+            "WARNING: Fewer commits after rewrite than before -- file content may have been altered!\n"
+            "  Restore from backup branch immediately."
+        )
+
+    if new_trees[: len(old_trees)] != old_trees:
         return (
             "WARNING: Tree SHAs changed after rewrite -- file content may have been altered!\n"
             "  Restore from backup branch immediately."
@@ -478,10 +489,17 @@ def _rewrite_dates(
     # 3. Build and run filter-branch
     cases: list[str] = []
     for sha, datestr in new_dates.items():
+        if not _SHA_RE.match(sha):
+            print(f"  ERROR: Invalid commit SHA: {sha}", file=sys.stderr)
+            return False
+        if not _ISO_DATE_RE.match(datestr):
+            print(f"  ERROR: Invalid date string: {datestr}", file=sys.stderr)
+            return False
+        safe_date = datestr.replace("'", "")
         cases.append(
             f"  {sha})\n"
-            f"    export GIT_AUTHOR_DATE='{datestr}'\n"
-            f"    export GIT_COMMITTER_DATE='{datestr}'\n"
+            f"    export GIT_AUTHOR_DATE='{safe_date}'\n"
+            f"    export GIT_COMMITTER_DATE='{safe_date}'\n"
             f"    ;;"
         )
     case_block: str = "\n".join(cases)
@@ -491,7 +509,7 @@ def _rewrite_dates(
     env["FILTER_BRANCH_SQUELCH_WARNING"] = "1"
 
     result = subprocess.run(
-        ["git", "filter-branch", "-f", "--env-filter", env_filter, "--", "--all"],
+        ["git", "filter-branch", "-f", "--env-filter", env_filter, "--", rev_range],
         capture_output=True,
         text=True,
         cwd=cwd,
@@ -506,8 +524,7 @@ def _rewrite_dates(
         return False
 
     # 4. Verify tree SHAs match (content unchanged)
-    new_shas: list[str] = list(new_dates.keys())
-    err = _verify_trees_preserved(cwd, original_trees, new_shas)
+    err = _verify_trees_preserved(cwd, original_trees, rev_range)
     if err:
         print(f"  {err}", file=sys.stderr)
         if backup_name:
@@ -515,11 +532,9 @@ def _rewrite_dates(
         return False
 
     # 5. Clean up refs/original (filter-branch backup -- we have our own backup branch)
-    subprocess.run(
-        ["rm", "-rf", f"{cwd}/.git/refs/original"],
-        capture_output=True,
-        cwd=cwd,
-    )
+    refs_original = Path(cwd) / ".git" / "refs" / "original"
+    if refs_original.is_dir():
+        shutil.rmtree(refs_original, ignore_errors=True)
 
     # 6. Sign commits if requested
     if sign:

@@ -40,7 +40,7 @@ class TestTrailerPatterns:
     def test_matches_known_trailers(self, line, expected_label):
         matched = False
         for pattern, label in TRAILER_PATTERNS:
-            if re.search(pattern, line, re.IGNORECASE):
+            if pattern.search(line):
                 assert label == expected_label
                 matched = True
                 break
@@ -56,7 +56,7 @@ class TestTrailerPatterns:
     )
     def test_ignores_human_trailers(self, line):
         for pattern, _ in TRAILER_PATTERNS:
-            assert not re.search(pattern, line, re.IGNORECASE), f"False positive on: {line}"
+            assert not pattern.search(line), f"False positive on: {line}"
 
 
 class TestCommitMsgPatterns:
@@ -75,18 +75,18 @@ class TestCommitMsgPatterns:
         ],
     )
     def test_matches_agentic_language(self, msg):
-        matched = any(re.search(p, msg, re.IGNORECASE) for p, _ in COMMIT_MSG_PATTERNS)
+        matched = any(p.search(msg) for p, _ in COMMIT_MSG_PATTERNS)
         assert matched, f"No pattern matched: {msg}"
 
     def test_emoji_prefix_detection(self):
         emoji_patterns = [(p, label) for p, label in COMMIT_MSG_PATTERNS if "Emoji" in label]
         assert len(emoji_patterns) == 1, "Expected exactly one emoji pattern"
         pattern, _label = emoji_patterns[0]
-        assert re.search(pattern, "\U0001f680 Add feature")
-        assert re.search(pattern, "\U0001f41b Fix bug")
-        assert re.search(pattern, "\u2728 Polish code")
-        assert not re.search(pattern, "Add feature")
-        assert not re.search(pattern, "fix: something")
+        assert pattern.search("\U0001f680 Add feature")
+        assert pattern.search("\U0001f41b Fix bug")
+        assert pattern.search("\u2728 Polish code")
+        assert not pattern.search("Add feature")
+        assert not pattern.search("fix: something")
 
     @pytest.mark.parametrize(
         "msg",
@@ -100,7 +100,7 @@ class TestCommitMsgPatterns:
         # Exclude emoji pattern — it's positional, not word-based
         non_emoji = [(p, label) for p, label in COMMIT_MSG_PATTERNS if "Emoji" not in label]
         for pattern, _ in non_emoji:
-            assert not re.search(pattern, msg, re.IGNORECASE), f"False positive on: {msg}"
+            assert not pattern.search(msg), f"False positive on: {msg}"
 
     @pytest.mark.parametrize(
         "msg",
@@ -118,7 +118,7 @@ class TestCommitMsgPatterns:
         ],
     )
     def test_matches_ai_to_user_language(self, msg):
-        matched = any(re.search(p, msg, re.IGNORECASE) for p, _ in COMMIT_MSG_PATTERNS)
+        matched = any(p.search(msg) for p, _ in COMMIT_MSG_PATTERNS)
         assert matched, f"No pattern matched: {msg}"
 
     @pytest.mark.parametrize(
@@ -137,7 +137,7 @@ class TestCommitMsgPatterns:
         ],
     )
     def test_matches_ai_first_person_voice(self, msg):
-        matched = any(re.search(p, msg, re.IGNORECASE) for p, _ in COMMIT_MSG_PATTERNS)
+        matched = any(p.search(msg) for p, _ in COMMIT_MSG_PATTERNS)
         assert matched, f"No pattern matched: {msg}"
 
     @pytest.mark.parametrize(
@@ -151,7 +151,7 @@ class TestCommitMsgPatterns:
     def test_ignores_normal_messages_with_similar_words(self, msg):
         non_emoji = [(p, label) for p, label in COMMIT_MSG_PATTERNS if "Emoji" not in label]
         for pattern, _ in non_emoji:
-            assert not re.search(pattern, msg, re.IGNORECASE), f"False positive on: {msg}"
+            assert not pattern.search(msg), f"False positive on: {msg}"
 
 
 class TestDiffPatterns:
@@ -171,7 +171,7 @@ class TestDiffPatterns:
         ],
     )
     def test_matches_conversational_patterns_in_code(self, line):
-        matched = any(re.search(p, line, re.IGNORECASE) for p, _ in DIFF_PATTERNS)
+        matched = any(p.search(line) for p, _ in DIFF_PATTERNS)
         assert matched, f"No pattern matched: {line}"
 
     @pytest.mark.parametrize(
@@ -185,7 +185,7 @@ class TestDiffPatterns:
     )
     def test_ignores_normal_code_comments(self, line):
         for pattern, _ in DIFF_PATTERNS:
-            assert not re.search(pattern, line, re.IGNORECASE), f"False positive on: {line}"
+            assert not pattern.search(line), f"False positive on: {line}"
 
 
 class TestBotAuthorPatterns:
@@ -199,7 +199,7 @@ class TestBotAuthorPatterns:
         ],
     )
     def test_matches_bot_emails(self, email):
-        matched = any(re.search(p, email, re.IGNORECASE) for p, _ in BOT_AUTHOR_PATTERNS)
+        matched = any(p.search(email) for p, _ in BOT_AUTHOR_PATTERNS)
         assert matched, f"No pattern matched: {email}"
 
     @pytest.mark.parametrize(
@@ -212,7 +212,7 @@ class TestBotAuthorPatterns:
     )
     def test_ignores_human_and_other_bot_emails(self, email):
         for pattern, _ in BOT_AUTHOR_PATTERNS:
-            assert not re.search(pattern, email, re.IGNORECASE), f"False positive on: {email}"
+            assert not pattern.search(email), f"False positive on: {email}"
 
 
 class TestBranchPatterns:
@@ -264,7 +264,7 @@ class TestCommentPatterns:
         ],
     )
     def test_matches_ai_comments(self, comment):
-        matched = any(re.search(p, comment, re.IGNORECASE) for p, _ in COMMENT_PATTERNS)
+        matched = any(p.search(comment) for p, _ in COMMENT_PATTERNS)
         assert matched, f"No pattern matched: {comment}"
 
     @pytest.mark.parametrize(
@@ -278,7 +278,7 @@ class TestCommentPatterns:
     )
     def test_ignores_normal_comments(self, comment):
         for pattern, _ in COMMENT_PATTERNS:
-            assert not re.search(pattern, comment, re.IGNORECASE), f"False positive on: {comment}"
+            assert not pattern.search(comment), f"False positive on: {comment}"
 
     @pytest.mark.parametrize(
         "comment",
@@ -292,5 +292,5 @@ class TestCommentPatterns:
         ],
     )
     def test_matches_conversational_comments(self, comment):
-        matched = any(re.search(p, comment, re.IGNORECASE) for p, _ in COMMENT_PATTERNS)
+        matched = any(p.search(comment) for p, _ in COMMENT_PATTERNS)
         assert matched, f"No pattern matched: {comment}"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -24,12 +25,23 @@ def load_config(root: str | Path) -> dict[str, Any]:
         except ImportError:
             pass
 
+        # Minimal fallback parser — only supports `key: value` and
+        # `key: [a, b]` inline lists.  Warn if we encounter YAML
+        # features that require the full parser.
         config: dict[str, Any] = {}
         with open(config_path) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
+                if line.startswith("- "):
+                    print(
+                        f"  WARNING: {CONFIG_FILENAME} uses YAML list syntax "
+                        "not supported by the fallback parser. "
+                        "Install PyYAML (`pip install pyyaml`) for full support.",
+                        file=sys.stderr,
+                    )
+                    return config
                 if ":" in line:
                     key, _, val_str = line.partition(":")
                     val_str = val_str.strip()

@@ -7,7 +7,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from . import Finding
+from . import Finding, Severity
 from .patterns import (
     BOT_AUTHOR_PATTERNS,
     BRANCH_PATTERNS,
@@ -15,6 +15,7 @@ from .patterns import (
     COMMIT_MSG_PATTERNS,
     DIFF_PATTERNS,
     TRAILER_PATTERNS,
+    CompiledPatterns,
 )
 
 
@@ -71,16 +72,16 @@ def get_unpushed_range(cwd: str | Path) -> str | None:
 
 def _match_any(
     text: str,
-    patterns: list[tuple[str, str]],
-    severity: str,
+    patterns: CompiledPatterns,
+    severity: Severity,
     category: str,
     location: str,
 ) -> list[Finding]:
-    """Match text against a list of (regex, label) patterns."""
+    """Match text against a list of (compiled_regex, label) patterns."""
     return [
         Finding(severity=severity, category=category, location=location, message=label)
         for pattern, label in patterns
-        if re.search(pattern, text, re.IGNORECASE)
+        if pattern.search(text)
     ]
 
 
@@ -113,7 +114,7 @@ def scan_commits(
 
         loc = f"commit {sha} ({subject})"
         for pattern, label in BOT_AUTHOR_PATTERNS:
-            if re.search(pattern, author_email, re.IGNORECASE):
+            if pattern.search(author_email):
                 findings.append(
                     Finding(
                         severity="high",
@@ -136,23 +137,33 @@ def scan_commit_diffs(
 ) -> list[Finding]:
     """Scan actual code diffs in commits for AI traces in added lines."""
     findings: list[Finding] = []
-    out = git(
-        "log",
-        f"--max-count={max_commits}",
-        "-p",
-        "--diff-filter=AM",
-        rev_range,
-        cwd=cwd,
-    )
-    if not out:
+    try:
+        proc = subprocess.Popen(
+            [
+                "git",
+                "--no-pager",
+                "log",
+                f"--max-count={max_commits}",
+                "-p",
+                "--diff-filter=AM",
+                rev_range,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            cwd=cwd,
+        )
+    except FileNotFoundError:
         return findings
 
+    assert proc.stdout is not None
     all_patterns = COMMENT_PATTERNS + DIFF_PATTERNS
     current_sha: str = ""
     current_file: str | None = None
     diff_line_no: int = 0
 
-    for line in out.split("\n"):
+    for line in proc.stdout:
+        line = line.rstrip("\n")
         if line.startswith("commit "):
             current_sha = line.split()[1][:12]
             current_file = None
@@ -164,8 +175,6 @@ def scan_commit_diffs(
             current_file = line[6:]
             diff_line_no = 0
         elif line.startswith("@@ "):
-            # Parse hunk header for approximate line number
-            # Format: @@ -old,count +new,count @@
             match = re.search(r"\+(\d+)", line)
             diff_line_no = int(match.group(1)) if match else 0
         elif line.startswith("+") and not line.startswith("+++"):
@@ -179,9 +188,9 @@ def scan_commit_diffs(
             findings.extend(_match_any(added, all_patterns, "medium", "commit-diff", loc))
             diff_line_no += 1
         elif not line.startswith("-"):
-            # Context lines also advance the line counter
             diff_line_no += 1
 
+    proc.wait()
     return findings
 
 
@@ -253,11 +262,11 @@ def _scan_diff(
                 continue
             added = line[1:]
             loc = current_file or "(unknown file)"
-            for pattern, label in TRAILER_PATTERNS + COMMENT_PATTERNS:
-                if re.search(pattern, added, re.IGNORECASE):
-                    severity = "high" if "trailer" in label.lower() else "medium"
+            for pattern, label in TRAILER_PATTERNS + COMMENT_PATTERNS + DIFF_PATTERNS:
+                if pattern.search(added):
+                    sev: Severity = "high" if "trailer" in label.lower() else "medium"
                     findings.append(
-                        Finding(severity=severity, category=category, location=loc, message=label)
+                        Finding(severity=sev, category=category, location=loc, message=label)
                     )
     return findings
 

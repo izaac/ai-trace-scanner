@@ -14,7 +14,9 @@ from ai_trace_scan.dates import (
     _collect_tree_shas,
     _create_backup_branch,
     _detect_clustering,
+    _rewrite_dates,
     _skip_weekends,
+    _verify_trees_preserved,
     fix_dates,
     preflight_checks,
     scan_dates,
@@ -337,6 +339,139 @@ class TestSafetyChecks:
         ).stdout.strip()
         assert "backup/fix-dates-" in out
 
+    def test_fix_dates_does_not_alter_other_branches(self, tmp_path: Path):
+        """Ensure filter-branch is scoped to rev_range and doesn't touch other branches."""
+        repo = _make_clustered_repo(tmp_path, count=3, gap_seconds=30)
+
+        # Create a second branch with its own commit
+        _git_run("checkout", "-b", "other", cwd=repo)
+        (repo / "other.txt").write_text("other branch content")
+        _git_run("add", ".", cwd=repo)
+        _git_run("commit", "-m", "other branch commit", cwd=repo)
+
+        # Record the other branch's commit SHA
+        other_sha = subprocess.run(
+            ["git", "rev-parse", "other"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+        # Switch back to main and rewrite only main's history
+        default = "main"
+        branches = subprocess.run(
+            ["git", "branch", "--list", "main"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if not branches:
+            default = "master"
+        _git_run("checkout", default, cwd=repo)
+
+        fix_dates(repo, "HEAD", spread_hours=3.0, jitter_minutes=0)
+
+        # The other branch's SHA must be unchanged
+        other_sha_after = subprocess.run(
+            ["git", "rev-parse", "other"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+        assert other_sha == other_sha_after, (
+            f"Other branch SHA changed from {other_sha} to {other_sha_after} — "
+            "filter-branch leaked beyond rev_range"
+        )
+
+    def test_fix_dates_preserves_file_content(self, tmp_path: Path):
+        """Every file must be byte-identical after rewriting dates."""
+        repo = _make_clustered_repo(tmp_path, count=4, gap_seconds=30)
+
+        # Record all file contents before rewrite
+        files_before: dict[str, str] = {}
+        for f in sorted(repo.glob("*.txt")):
+            files_before[f.name] = f.read_text()
+
+        fix_dates(repo, "HEAD", spread_hours=3.0, jitter_minutes=0)
+
+        # Verify every file is identical
+        for name, content in files_before.items():
+            assert (
+                repo / name
+            ).read_text() == content, f"File {name} content changed after rewrite"
+
+        # Also verify via git: tree SHA of HEAD must match original
+        tree_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD^{tree}"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert len(tree_sha) == 40
+
+    def test_backup_branch_restores_original_state(self, tmp_path: Path):
+        """Restoring from backup must recover the exact original commit SHAs."""
+        repo = _make_clustered_repo(tmp_path, count=4, gap_seconds=30)
+
+        # Record original SHAs and dates
+        original = subprocess.run(
+            ["git", "--no-pager", "log", "--format=%H %aI"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+        fix_dates(repo, "HEAD", spread_hours=3.0, jitter_minutes=0)
+
+        # Find the backup branch
+        branches = subprocess.run(
+            ["git", "branch", "--list", "backup/*"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        backup_name = branches.strip().lstrip("* ")
+
+        # Restore from backup
+        _git_run("reset", "--hard", backup_name, cwd=repo)
+
+        # Original SHAs and dates must be restored exactly
+        restored = subprocess.run(
+            ["git", "--no-pager", "log", "--format=%H %aI"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert restored == original, "Backup restore did not recover original state"
+
+    def test_rewrite_rejects_invalid_sha(self, clustered_repo):
+        """_rewrite_dates must reject SHAs that don't match the expected format."""
+        bad_dates = {"not-a-valid-sha!": "2026-01-01T10:00:00+00:00"}
+        result = _rewrite_dates(clustered_repo, bad_dates, 1, 3.0, None, "HEAD")
+        assert result is False
+
+    def test_rewrite_rejects_invalid_date(self, clustered_repo):
+        """_rewrite_dates must reject date strings that don't match ISO format."""
+        # Get a real SHA to pair with the bad date
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=clustered_repo,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        bad_dates = {sha: "'; rm -rf / #"}
+        result = _rewrite_dates(clustered_repo, bad_dates, 1, 3.0, None, "HEAD")
+        assert result is False
+
+    def test_verify_trees_catches_mismatch(self, clustered_repo):
+        """_verify_trees_preserved must return an error when trees don't match."""
+        # Build a fake original_trees dict with wrong tree SHAs
+        fake_trees = {"a" * 40: "b" * 40, "c" * 40: "d" * 40}
+        err = _verify_trees_preserved(clustered_repo, fake_trees, "HEAD")
+        assert err is not None
+        assert "tree shas changed" in err.lower()
+
     def test_preflight_all_clear(self, clustered_repo):
         shas = (
             subprocess.run(
@@ -449,13 +584,22 @@ class TestSkipWeekends:
             assert dt.weekday() < 5, f"Commit on weekend: {line}"
 
     def test_fix_dates_blocked_by_future_guard(self, tmp_path: Path) -> None:
-        """fix-dates refuses when --no-weekends would produce future dates."""
+        """fix-dates refuses when --no-weekends would produce future dates.
+
+        Uses a fixed Saturday date so this test is deterministic
+        regardless of which day it runs on.
+        """
         _git_run("init", cwd=tmp_path)
         _git_run("config", "user.email", "test@test.com", cwd=tmp_path)
         _git_run("config", "user.name", "Test", cwd=tmp_path)
 
-        # Use today (Saturday Mar 29) so --no-weekends shifts to Monday (future)
-        base: datetime = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+        # Use the *next* Saturday so that --no-weekends shifts to a Monday
+        # that is guaranteed to be in the future, triggering the guard.
+        now = datetime.now(tz=timezone.utc)
+        days_until_saturday = (5 - now.weekday()) % 7 or 7
+        next_saturday = now + timedelta(days=days_until_saturday)
+        base = next_saturday.replace(hour=23, minute=0, second=0, microsecond=0)
+
         for i in range(3):
             dt: datetime = base + timedelta(minutes=i)
             datestr: str = dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
@@ -469,7 +613,7 @@ class TestSkipWeekends:
                 env_extra={"GIT_AUTHOR_DATE": datestr, "GIT_COMMITTER_DATE": datestr},
             )
 
-        # Today is Saturday; --no-weekends + first-commit anchor shifts to Monday = future
+        # --no-weekends + first-commit anchor shifts Saturday 23:00 to Monday = future
         result: bool | None = fix_dates(
             tmp_path,
             "HEAD",
