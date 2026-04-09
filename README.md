@@ -5,36 +5,59 @@ Detect AI/agentic authorship fingerprints in a codebase.
 Scans git history, branch names, config files, and source comments for
 traces left by AI coding assistants (Copilot, Claude, Cursor, Aider, etc).
 
-## Table of contents
+## Install
 
-- [Setup](#setup)
-  - [Platform notes](#platform-notes)
-- [Usage](#usage)
-  - [Scan an entire repo](#scan-an-entire-repo)
-  - [Scan only your current branch](#scan-only-your-current-branch)
-  - [Scan staged changes before committing](#scan-staged-changes-before-committing)
-  - [Scan unstaged work-in-progress](#scan-unstaged-work-in-progress)
-  - [Limit commit history depth](#limit-commit-history-depth)
-  - [Disable color](#disable-color-for-ci--piping)
-  - [Quiet mode](#quiet-mode-findings-only-no-banner)
-- [What it detects](#what-it-detects)
-- [Exit codes](#exit-codes)
-- [Pre-commit hook](#pre-commit-hook)
-- [Exclude patterns](#exclude-patterns)
-  - [Persistent excludes with config file](#persistent-excludes-with-config-file)
-- [JSON output](#json-output)
-- [Commit timing detection and fix](#commit-timing-detection-and-fix)
-  - [How it works](#how-it-works)
-  - [Usage](#usage-1)
-  - [Safety checks](#safety-checks)
-  - [Detection](#detection)
-- [Development](#development)
-  - [Running tests](#running-tests)
-  - [Linting and formatting](#linting-and-formatting)
-  - [Pre-commit hooks](#pre-commit-hooks)
-  - [Makefile targets](#makefile-targets)
+Install `ai-trace-scan` as a standalone CLI tool — no need to clone
+this repository.
 
-## Setup
+### uv
+
+```sh
+uv tool install git+https://github.com/izaac/ai-trace-scanner
+```
+
+### pipx
+
+```sh
+pipx install git+https://github.com/izaac/ai-trace-scanner
+```
+
+Either command gives you a global `ai-trace-scan` on your `$PATH`.
+
+### Direct git hook
+
+If you just want a pre-commit hook without the
+[pre-commit](https://pre-commit.com) framework, ensure `ai-trace-scan`
+is installed (see above), then in **your** repository:
+
+```sh
+cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/sh
+ai-trace-scan --staged --quiet
+EOF
+chmod +x .git/hooks/pre-commit
+```
+
+### Pre-commit framework
+
+Add to your `.pre-commit-config.yaml`:
+
+```yaml
+- repo: https://github.com/izaac/ai-trace-scanner
+  rev: v0.6.0
+  hooks:
+    - id: ai-trace-scan
+```
+
+Then run `pre-commit install`. The framework handles cloning and
+dependency installation automatically — no local install required.
+Pin `rev` to a release tag (e.g. `v0.6.0`) and update with
+`pre-commit autoupdate`.
+
+## Setup (development)
+
+> **This section is for contributors.** If you just want to use the
+> tool, see [Install](#install) above.
 
 One-time setup — installs `uv` (if needed) and creates the virtual environment:
 
@@ -63,17 +86,10 @@ uv run ai-trace-scan --help
 
 ## Usage
 
-Once installed, run from anywhere using `uv run --project`:
+Once installed, run directly:
 
 ```sh
-# Shorthand — add to .bashrc / .zshrc
-alias ai-scan='uv run --project /path/to/ai-trace-scanner ai-trace-scan'
-```
-
-### Scan an entire repo
-
-```sh
-ai-scan /path/to/repo
+ai-trace-scan /path/to/repo
 ```
 
 Scans the last 50 commits, all branches, config files, and source tree.
@@ -84,7 +100,7 @@ The most common use case — check your feature branch before pushing:
 
 ```sh
 cd /path/to/repo
-ai-scan --branch $(git branch --show-current) .
+ai-trace-scan --branch $(git branch --show-current) .
 ```
 
 This scans only commits in your branch that aren't in `main`/`master`,
@@ -94,42 +110,42 @@ plus the source tree and config files.
 
 ```sh
 cd /path/to/repo
-ai-scan --staged
+ai-trace-scan --staged
 ```
 
 Only checks the diff of what you're about to commit. Useful as a
-pre-commit hook (see below).
+pre-commit hook (see [Install](#install)).
 
 ### Scan unstaged work-in-progress
 
 ```sh
 cd /path/to/repo
-ai-scan --unstaged
+ai-trace-scan --unstaged
 ```
 
 Scans your working tree changes before you even stage them. Use both
 together to check everything pending:
 
 ```sh
-ai-scan --staged --unstaged
+ai-trace-scan --staged --unstaged
 ```
 
 ### Limit commit history depth
 
 ```sh
-ai-scan --commits 10 /path/to/repo
+ai-trace-scan --commits 10 /path/to/repo
 ```
 
 ### Disable color (for CI / piping)
 
 ```sh
-ai-scan --no-color /path/to/repo
+ai-trace-scan --no-color /path/to/repo
 ```
 
 ### Quiet mode (findings only, no banner)
 
 ```sh
-ai-scan --quiet /path/to/repo
+ai-trace-scan --quiet /path/to/repo
 ```
 
 ## What it detects
@@ -159,40 +175,19 @@ ai-scan --quiet /path/to/repo
 | 1    | Findings detected |
 | 2    | Error             |
 
-## Pre-commit hook
-
-Add to `.pre-commit-config.yaml`:
-
-```yaml
-- repo: local
-  hooks:
-    - id: ai-trace-scan
-      name: AI trace scan
-      entry: uv run --project /path/to/ai-trace-scanner ai-trace-scan --staged
-      language: system
-      pass_filenames: false
-```
-
-Or as a git hook directly in `.git/hooks/pre-commit`:
-
-```sh
-#!/bin/sh
-uv run --project /path/to/ai-trace-scanner ai-trace-scan --staged
-```
-
 ## Exclude patterns
 
 Filter out noise from things you don't control (upstream branches, etc):
 
 ```sh
 # Exclude all upstream remote branches
-ai-scan --exclude 'upstream/' /path/to/repo
+ai-trace-scan --exclude 'upstream/' /path/to/repo
 
 # Exclude specific config files
-ai-scan --exclude 'AGENTS\.md' --exclude 'CLAUDE\.md' /path/to/repo
+ai-trace-scan --exclude 'AGENTS\.md' --exclude 'CLAUDE\.md' /path/to/repo
 
 # Combine multiple excludes
-ai-scan --exclude 'upstream/' --exclude 'origin/copilot/' /path/to/repo
+ai-trace-scan --exclude 'upstream/' --exclude 'origin/copilot/' /path/to/repo
 ```
 
 ### Persistent excludes with config file
@@ -210,10 +205,10 @@ Config file excludes are merged with CLI `--exclude` flags.
 For CI pipelines or further processing:
 
 ```sh
-ai-scan --format json /path/to/repo
+ai-trace-scan --format json /path/to/repo
 
 # Pipe to jq for filtering
-ai-scan --format json /path/to/repo | jq '[.[] | select(.severity == "high")]'
+ai-trace-scan --format json /path/to/repo | jq '[.[] | select(.severity == "high")]'
 ```
 
 ## Commit timing detection and fix
@@ -263,37 +258,37 @@ Session 1 (3 days ago)     idle      Session 2 (today)
 
 ```sh
 # Preview what would change (safe, no modifications)
-ai-scan --fix-dates --dry-run /path/to/repo
+ai-trace-scan --fix-dates --dry-run /path/to/repo
 
 # Single session: spread 10 commits over 3 hours (default)
-ai-scan --fix-dates /path/to/repo
+ai-trace-scan --fix-dates /path/to/repo
 
 # Longer session
-ai-scan --fix-dates --spread 6 /path/to/repo
+ai-trace-scan --fix-dates --spread 6 /path/to/repo
 
 # Burst mode: 3 work sessions, ~2 days idle between each
-ai-scan --fix-dates --burst 3,2 /path/to/repo
+ai-trace-scan --fix-dates --burst 3,2 /path/to/repo
 
 # Burst with custom session length
-ai-scan --fix-dates --burst 2,3 --spread 4 /path/to/repo
+ai-trace-scan --fix-dates --burst 2,3 --spread 4 /path/to/repo
 
 # Tighter jitter for less variance
-ai-scan --fix-dates --jitter 5 /path/to/repo
+ai-trace-scan --fix-dates --jitter 5 /path/to/repo
 
 # Fix only a feature branch
-ai-scan --fix-dates --branch my-feature /path/to/repo
+ai-trace-scan --fix-dates --branch my-feature /path/to/repo
 
 # Anchor from first commit instead of present (may produce future dates)
-ai-scan --fix-dates --anchor first-commit /path/to/repo
+ai-trace-scan --fix-dates --anchor first-commit /path/to/repo
 
 # Override remote-push safety check (you know what you're doing)
-ai-scan --fix-dates --force /path/to/repo
+ai-trace-scan --fix-dates --force /path/to/repo
 
 # GPG/SSH sign all commits after rewriting
-ai-scan --fix-dates --sign /path/to/repo
+ai-trace-scan --fix-dates --sign /path/to/repo
 
 # Full example: burst + sign + force
-ai-scan --fix-dates --all-commits --force --burst 4,3 --spread 5 --jitter 25 --sign /path/to/repo
+ai-trace-scan --fix-dates --all-commits --force --burst 4,3 --spread 5 --jitter 25 --sign /path/to/repo
 ```
 
 ### Safety checks
@@ -319,7 +314,7 @@ After every rewrite, undo instructions are printed:
 Use `--dry-run` to preview the timestamp changes without modifying history:
 
 ```sh
-ai-scan --fix-dates --dry-run /path/to/repo
+ai-trace-scan --fix-dates --dry-run /path/to/repo
 ```
 
 ```
@@ -336,7 +331,7 @@ Commit timing analysis runs automatically during scans. Adjust sensitivity:
 
 ```sh
 # Flag clusters with less than 3-minute average gaps (stricter)
-ai-scan --cluster-threshold 3 /path/to/repo
+ai-trace-scan --cluster-threshold 3 /path/to/repo
 ```
 
 ## Development
